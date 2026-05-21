@@ -1,0 +1,32 @@
+# 依赖
+node_modules/
+
+# 编译输出
+dist/
+build/
+lib/
+out/
+
+# TypeScript 构建信息
+*.tsbuildinfo
+
+# 日志文件
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统生成文件
+.DS_Store
+Thumbs.db

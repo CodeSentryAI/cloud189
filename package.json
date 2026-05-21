@@ -1,0 +1,19 @@
+{
+  "name": "cloud189-cli",
+  "version": "0.1.0",
+  "description": "Ubuntu CLI client for Tianyi Cloud Disk via cloud189-sdk",
+  "main": "src/cli.js",
+  "bin": {
+    "cloud189": "bin/cloud189.js"
+  },
+  "scripts": {
+    "start": "node bin/cloud189.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cloud189-sdk": "^1.0.9"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

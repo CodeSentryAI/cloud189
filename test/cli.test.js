@@ -1,0 +1,24 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { parseArgs, usage } = require('../src/cli');
+
+test('parseArgs separates options and positional arguments', () => {
+  const parsed = parseArgs(['sync-upload', './data', '123', '--once', '--interval', '1000']);
+
+  assert.equal(parsed.command, 'sync-upload');
+  assert.deepEqual(parsed.args, ['./data', '123']);
+  assert.deepEqual(parsed.options, {
+    once: true,
+    interval: '1000'
+  });
+});
+
+test('usage lists core commands', () => {
+  const text = usage();
+
+  assert.match(text, /login/);
+  assert.match(text, /login-qr/);
+  assert.match(text, /login-sso/);
+  assert.match(text, /sync-download/);
+  assert.match(text, /status/);
+});
