@@ -19,6 +19,9 @@ test('usage lists core commands', () => {
   assert.match(text, /login/);
   assert.match(text, /login-qr/);
   assert.match(text, /login-sso/);
+  assert.match(text, /upload-safe/);
+  assert.match(text, /sync-upload-safe/);
+  assert.match(text, /agent-status/);
   assert.match(text, /sync-download/);
   assert.match(text, /status/);
 });
