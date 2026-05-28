@@ -1,7 +1,16 @@
 const fs = require('fs');
 const { createClient } = require('./client');
 const { getConfigDir, getStatePath, getTokenPath } = require('./config');
-const { formatBytes, formatEntries, formatListing } = require('./format');
+const { formatBytes, formatEntries, formatListing, table } = require('./format');
+const {
+  assertCommandAllowed,
+  assertWriteRoot,
+  errorPayload,
+  loadAgentConfig,
+  resolveAgentContext,
+  saveAgentConfig,
+  writeJsonOutput
+} = require('./agent-safe');
 const {
   collectRemoteEntries,
   createRemoteFolder,
@@ -14,6 +23,15 @@ const {
 } = require('./remote');
 const { pollDownload, pollUpload } = require('./sync');
 const { downloadFile, downloadFolder, uploadPath } = require('./transfer');
+const {
+  assertNoUploadConflict,
+  mkdirSafe,
+  normalizeEntries,
+  normalizeListingItems,
+  planActions,
+  rootsPayload,
+  runSafeUploadPass
+} = require('./safe-storage');
 const syncState = require('./sync-state');
 
 const COMMANDS = [
@@ -30,9 +48,14 @@ const COMMANDS = [
   'tree [remoteFolderId] [--depth <n>]',
   'search <keyword> [remoteFolderId] [--depth <n>]',
   'upload <localPath> <remoteFolderId>',
+  'upload-safe <localPath> <remoteFolderId>',
   'download <remoteId> <localPath> [--dir]',
   'sync-upload <localDir> <remoteFolderId> [--once] [--interval <ms>]',
+  'sync-upload-safe <localDir> <remoteFolderId> [--once] [--interval <ms>]',
   'sync-download <remoteFolderId> <localDir> [--once] [--interval <ms>]',
+  'plan <rm|mv|rename-folder|upload|sync-upload> ...',
+  'init-agent <name>',
+  'agent-status',
   'status'
 ];
 
@@ -99,9 +122,9 @@ function parseDepth(value) {
 }
 
 function formatQuota(info) {
-  const total = info.totalSize ?? info.totalCapacity ?? info.capacity ?? info.cloudCapacity;
-  const used = info.usedSize ?? info.usedCapacity ?? info.used ?? info.cloudUsedSize;
-  const available = info.availableSize ?? info.freeSize ?? (total !== undefined && used !== undefined ? Number(total) - Number(used) : undefined);
+  const total = info.totalSize ?? info.totalCapacity ?? info.capacity ?? info.cloudCapacity ?? info.cloudCapacityInfo?.totalSize;
+  const used = info.usedSize ?? info.usedCapacity ?? info.used ?? info.cloudUsedSize ?? info.cloudCapacityInfo?.usedSize;
+  const available = info.availableSize ?? info.freeSize ?? info.cloudCapacityInfo?.freeSize ?? (total !== undefined && used !== undefined ? Number(total) - Number(used) : undefined);
   const rows = [
     ['Total', total],
     ['Used', used],
@@ -115,12 +138,106 @@ function formatQuota(info) {
   return rows.map(([label, value]) => `${label}: ${formatBytes(value)}`).join('\n');
 }
 
+function quotaPayload(info) {
+  const total = info.totalSize ?? info.totalCapacity ?? info.capacity ?? info.cloudCapacity ?? info.cloudCapacityInfo?.totalSize;
+  const used = info.usedSize ?? info.usedCapacity ?? info.used ?? info.cloudUsedSize ?? info.cloudCapacityInfo?.usedSize;
+  const available = info.availableSize ?? info.freeSize ?? info.cloudCapacityInfo?.freeSize ?? (total !== undefined && used !== undefined ? Number(total) - Number(used) : undefined);
+  return { ok: true, total, used, available, raw: info };
+}
+
+function statusPayload() {
+  const statePath = getStatePath();
+  const state = syncState.loadState(statePath);
+  const operations = state.operations || [];
+  return {
+    ok: true,
+    configDir: getConfigDir(),
+    tokenCache: fs.existsSync(getTokenPath()) ? 'present' : 'missing',
+    stateFile: fs.existsSync(statePath) ? statePath : 'missing',
+    lastOperation: operations.length ? operations[operations.length - 1] : null
+  };
+}
+
+function printStatusText(payload) {
+  console.log(`Config: ${payload.configDir}`);
+  console.log(`Token cache: ${payload.tokenCache}`);
+  console.log(`State file: ${payload.stateFile}`);
+  if (payload.lastOperation) {
+    const last = payload.lastOperation;
+    console.log(`Last operation: ${last.type} at ${last.at} (${last.count} changed)`);
+  } else {
+    console.log('Last operation: none');
+  }
+}
+
+function formatPlan(actions) {
+  return table(actions, [
+    { key: 'action', header: 'ACTION' },
+    { key: 'type', header: 'TYPE' },
+    { key: 'id', header: 'ID' },
+    { key: 'name', header: 'NAME' },
+    { key: 'risk', header: 'RISK' }
+  ]);
+}
+
+async function ensureNamedFolder(client, parentId, name) {
+  const listing = await listAll(client, parentId);
+  const existing = listing.fileListAO.folderList.find((folder) => folder.name === name);
+  if (existing) {
+    return existing;
+  }
+  return createRemoteFolder(client, parentId, name);
+}
+
+function agentStatusPayload(context) {
+  return {
+    ok: true,
+    login: fs.existsSync(getTokenPath()) ? 'ok' : 'missing',
+    provider: context.provider,
+    mode: context.mode,
+    agent: context.agent.name,
+    writeRootId: context.agent.writeRootId,
+    canSearch: true,
+    canDownload: true,
+    canUploadSafe: Boolean(context.agent.writeRootId),
+    canDelete: false,
+    canMove: false,
+    canOverwrite: false
+  };
+}
+
+function formatAgentStatus(payload) {
+  const rows = [
+    ['login', payload.login],
+    ['provider', payload.provider],
+    ['mode', payload.mode],
+    ['agent', payload.agent],
+    ['write_root_id', payload.writeRootId || 'missing'],
+    ['can_search', payload.canSearch ? 'yes' : 'no'],
+    ['can_download', payload.canDownload ? 'yes' : 'no'],
+    ['can_upload_safe', payload.canUploadSafe ? 'yes' : 'no'],
+    ['can_delete', payload.canDelete ? 'yes' : 'no'],
+    ['can_move', payload.canMove ? 'yes' : 'no'],
+    ['can_overwrite', payload.canOverwrite ? 'yes' : 'no']
+  ].map(([key, value]) => ({ key, value }));
+  return table(rows, [
+    { key: 'key', header: 'KEY' },
+    { key: 'value', header: 'VALUE' }
+  ]);
+}
+
 async function main(argv = process.argv.slice(2)) {
   const parsed = parseArgs(argv);
   if (!parsed.command || parsed.options.help || parsed.command === 'help') {
     console.log(usage());
     return;
   }
+
+  const wantsJson = Boolean(parsed.options.json);
+  const context = resolveAgentContext(parsed.options);
+
+  try {
+    assertCommandAllowed(parsed.command, context);
 
   if (parsed.command === 'login') {
     const username = requireArg(parsed.options.username, '--username');
@@ -160,11 +277,19 @@ async function main(argv = process.argv.slice(2)) {
   if (parsed.command === 'list') {
     const client = createClient();
     const listing = await listAll(client, parsed.args[0]);
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, items: normalizeListingItems(listing, parsed.args[0] || PERSONAL_ROOT_FOLDER_ID) });
+      return;
+    }
     console.log(formatListing(listing));
     return;
   }
 
   if (parsed.command === 'roots') {
+    if (wantsJson) {
+      writeJsonOutput(rootsPayload());
+      return;
+    }
     console.log(`personal ${PERSONAL_ROOT_FOLDER_ID}`);
     console.log('syncdisk 0');
     return;
@@ -208,6 +333,10 @@ async function main(argv = process.argv.slice(2)) {
   if (parsed.command === 'quota') {
     const client = createClient();
     const info = await client.getUserSizeInfo();
+    if (wantsJson) {
+      writeJsonOutput(quotaPayload(info));
+      return;
+    }
     console.log(formatQuota(info));
     return;
   }
@@ -217,6 +346,10 @@ async function main(argv = process.argv.slice(2)) {
     const entries = await collectRemoteEntries(client, parsed.args[0], {
       maxDepth: parseDepth(parsed.options.depth)
     });
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, items: normalizeEntries(entries) });
+      return;
+    }
     console.log(formatEntries(entries));
     return;
   }
@@ -227,6 +360,10 @@ async function main(argv = process.argv.slice(2)) {
     const entries = await searchRemoteEntries(client, keyword, parsed.args[1], {
       maxDepth: parseDepth(parsed.options.depth)
     });
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, items: normalizeEntries(entries) });
+      return;
+    }
     console.log(formatEntries(entries));
     return;
   }
@@ -244,6 +381,42 @@ async function main(argv = process.argv.slice(2)) {
     });
     process.stderr.write(uploaded.length ? '\n' : '');
     printLines(uploaded.map((item) => `uploaded ${item.fileName} ${item.remoteFileId}`));
+    return;
+  }
+
+  if (parsed.command === 'upload-safe') {
+    const localPath = requireArg(parsed.args[0], 'localPath');
+    const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
+    assertWriteRoot(remoteFolderId, context);
+    const client = createClient();
+    await assertNoUploadConflict(client, localPath, remoteFolderId);
+    const uploaded = await uploadPath(client, localPath, remoteFolderId, {
+      callbacks: {
+        onProgress(progress) {
+          process.stderr.write(`\rupload ${Math.round(progress)}%`);
+        }
+      }
+    });
+    process.stderr.write(uploaded.length ? '\n' : '');
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, uploaded });
+      return;
+    }
+    printLines(uploaded.map((item) => `uploaded ${item.fileName} ${item.remoteFileId}`));
+    return;
+  }
+
+  if (parsed.command === 'mkdir-safe') {
+    const remoteParentId = requireArg(parsed.args[0], 'remoteParentId');
+    const name = requireArg(parsed.args[1], 'name');
+    assertWriteRoot(remoteParentId, context);
+    const client = createClient();
+    const folder = await mkdirSafe(client, remoteParentId, name);
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, item: { type: 'dir', id: folder.id, name: folder.name, existed: folder.existed } });
+      return;
+    }
+    console.log(`${folder.existed ? 'existing' : 'created'} dir ${folder.id} ${folder.name}`);
     return;
   }
 
@@ -270,6 +443,30 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (parsed.command === 'sync-upload-safe') {
+    const localDir = requireArg(parsed.args[0], 'localDir');
+    const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
+    assertWriteRoot(remoteFolderId, context);
+    const client = createClient();
+    const result = await runSafeUploadPass(client, localDir, remoteFolderId);
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, ...result });
+      return;
+    }
+    if (parsed.options.once) {
+      console.log(`sync-upload-safe pass complete (${result.uploaded.length} uploaded, ${result.skipped.length} skipped)`);
+      return;
+    }
+    const intervalMs = Number(parsed.options.interval || 5000);
+    console.log('sync-upload-safe running');
+    setInterval(() => {
+      runSafeUploadPass(client, localDir, remoteFolderId).catch((error) => {
+        console.error(`sync-upload-safe failed: ${error.message}`);
+      });
+    }, intervalMs);
+    return;
+  }
+
   if (parsed.command === 'sync-download') {
     const remoteFolderId = requireArg(parsed.args[0], 'remoteFolderId');
     const localDir = requireArg(parsed.args[1], 'localDir');
@@ -283,22 +480,86 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   if (parsed.command === 'status') {
-    const statePath = getStatePath();
-    const state = syncState.loadState(statePath);
-    const operations = state.operations || [];
-    console.log(`Config: ${getConfigDir()}`);
-    console.log(`Token cache: ${fs.existsSync(getTokenPath()) ? 'present' : 'missing'}`);
-    console.log(`State file: ${fs.existsSync(statePath) ? statePath : 'missing'}`);
-    if (operations.length) {
-      const last = operations[operations.length - 1];
-      console.log(`Last operation: ${last.type} at ${last.at} (${last.count} changed)`);
-    } else {
-      console.log('Last operation: none');
+    const payload = statusPayload();
+    if (wantsJson) {
+      writeJsonOutput(payload);
+      return;
     }
+    printStatusText(payload);
+    return;
+  }
+
+  if (parsed.command === 'plan') {
+    const planCommand = requireArg(parsed.args[0], 'plan command');
+    const actions = planActions(planCommand, parsed.args.slice(1));
+    const payload = { ok: true, dryRun: true, actions };
+    if (wantsJson) {
+      writeJsonOutput(payload);
+      return;
+    }
+    console.log(formatPlan(actions));
+    return;
+  }
+
+  if (parsed.command === 'init-agent') {
+    const agentName = requireArg(parsed.args[0], 'name');
+    const client = createClient();
+    const agents = await ensureNamedFolder(client, PERSONAL_ROOT_FOLDER_ID, 'Agents');
+    const agentRoot = await ensureNamedFolder(client, agents.id, agentName);
+    await ensureNamedFolder(client, agentRoot.id, 'inbox');
+    await ensureNamedFolder(client, agentRoot.id, 'results');
+    await ensureNamedFolder(client, agentRoot.id, 'workspace');
+    await ensureNamedFolder(client, agentRoot.id, 'logs');
+
+    const config = loadAgentConfig();
+    config.mode = 'agent-safe';
+    config.agent = {
+      ...(config.agent || {}),
+      name: agentName,
+      writeRootName: agentName,
+      writeRootId: agentRoot.id,
+      allowDelete: false,
+      allowMove: false,
+      allowRename: false,
+      allowOverwrite: false
+    };
+    saveAgentConfig(config);
+    const rows = [
+      { key: 'agent', value: agentName },
+      { key: 'write_root', value: `/Agents/${agentName}` },
+      { key: 'write_root_id', value: agentRoot.id },
+      { key: 'mode', value: 'agent-safe' }
+    ];
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, agent: agentName, writeRoot: `/Agents/${agentName}`, writeRootId: agentRoot.id, mode: 'agent-safe' });
+      return;
+    }
+    console.log(table(rows, [
+      { key: 'key', header: 'KEY' },
+      { key: 'value', header: 'VALUE' }
+    ]));
+    return;
+  }
+
+  if (parsed.command === 'agent-status') {
+    const payload = agentStatusPayload(context);
+    if (wantsJson) {
+      writeJsonOutput(payload);
+      return;
+    }
+    console.log(formatAgentStatus(payload));
     return;
   }
 
   throw new Error(`Unknown command: ${parsed.command}\n\n${usage()}`);
+  } catch (error) {
+    if (wantsJson) {
+      writeJsonOutput(errorPayload(error));
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
 }
 
 module.exports = {
