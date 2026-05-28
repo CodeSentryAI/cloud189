@@ -118,6 +118,9 @@ List files and folders in a remote folder:
 npm start -- list <remoteFolderId>
 ```
 
+Omit the folder ID to list the personal cloud root. Tianyi Cloud Disk uses `-11`
+for the personal root and `0` for SyncDisk.
+
 Example:
 
 ```bash
@@ -125,6 +128,58 @@ npm start -- list 123456789
 ```
 
 The output includes type, ID, name, size, and modified time. Use listed IDs for download and upload targets.
+
+Show built-in root IDs:
+
+```bash
+npm start -- roots
+```
+
+## Manage Remote Files
+
+Create a remote folder:
+
+```bash
+npm start -- mkdir <remoteParentId> <name>
+```
+
+Delete a remote file:
+
+```bash
+npm start -- rm <remoteFileId>
+```
+
+Delete a remote folder:
+
+```bash
+npm start -- rm <remoteFolderId> --dir
+```
+
+Move a remote file or folder:
+
+```bash
+npm start -- mv <remoteId> <targetFolderId>
+npm start -- mv <remoteFolderId> <targetFolderId> --dir
+```
+
+Rename a remote folder:
+
+```bash
+npm start -- rename-folder <remoteFolderId> <newName>
+```
+
+Show account storage usage:
+
+```bash
+npm start -- quota
+```
+
+Recursively list or search remote content:
+
+```bash
+npm start -- tree <remoteFolderId> --depth 2
+npm start -- search <keyword> <remoteFolderId> --depth 2
+```
 
 ## Upload
 

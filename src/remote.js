@@ -1,4 +1,20 @@
+const PERSONAL_ROOT_FOLDER_ID = '-11';
+
+function resolveFolderId(folderId) {
+  return folderId === undefined ? PERSONAL_ROOT_FOLDER_ID : folderId;
+}
+
+function taskInfo(remoteId, options = {}) {
+  return {
+    fileId: remoteId,
+    fileName: options.name,
+    isFolder: options.isFolder ? 1 : 0,
+    srcParentId: options.parentId
+  };
+}
+
 async function listAll(client, folderId) {
+  const resolvedFolderId = resolveFolderId(folderId);
   const pageSize = 60;
   let pageNum = 1;
   const fileList = [];
@@ -6,7 +22,7 @@ async function listAll(client, folderId) {
   let lastRev = 0;
 
   while (true) {
-    const response = await client.getListFiles({ folderId, pageNum, pageSize });
+    const response = await client.getListFiles({ folderId: resolvedFolderId, pageNum, pageSize });
     const page = response.fileListAO;
     fileList.push(...page.fileList);
     folderList.push(...page.folderList);
@@ -26,6 +42,41 @@ async function listAll(client, folderId) {
     },
     lastRev
   };
+}
+
+async function createRemoteFolder(client, parentFolderId, folderName) {
+  return client.createFolder({
+    parentFolderId: resolveFolderId(parentFolderId),
+    folderName
+  });
+}
+
+async function renameRemoteFolder(client, folderId, folderName) {
+  return client.renameFolder({ folderId, folderName });
+}
+
+async function runBatchTask(client, type, taskInfos, options = {}) {
+  const result = await client.createBatchTask({
+    type,
+    taskInfos,
+    targetFolderId: options.targetFolderId
+  });
+
+  if (result.taskId && result.taskStatus !== 4) {
+    return client.checkTaskStatus(type, result.taskId);
+  }
+
+  return result;
+}
+
+async function deleteRemoteItem(client, remoteId, options = {}) {
+  return runBatchTask(client, 'DELETE', [taskInfo(remoteId, options)]);
+}
+
+async function moveRemoteItem(client, remoteId, targetFolderId, options = {}) {
+  return runBatchTask(client, 'MOVE', [taskInfo(remoteId, options)], {
+    targetFolderId: resolveFolderId(targetFolderId)
+  });
 }
 
 async function ensureRemoteFolderPath(client, parentFolderId, parts) {
@@ -64,6 +115,42 @@ async function collectRemoteTree(client, folderId, prefix = '') {
   return files;
 }
 
+async function collectRemoteEntries(client, folderId, options = {}) {
+  const maxDepth = options.maxDepth ?? Infinity;
+  const prefix = options.prefix || '';
+  const depth = options.depth || 0;
+  const listing = await listAll(client, folderId);
+  const entries = [];
+
+  for (const folder of listing.fileListAO.folderList) {
+    const path = `${prefix}${folder.name}`;
+    entries.push({ ...folder, type: 'dir', path });
+
+    if (depth < maxDepth) {
+      const childEntries = await collectRemoteEntries(client, folder.id, {
+        maxDepth,
+        prefix: `${path}/`,
+        depth: depth + 1
+      });
+      entries.push(...childEntries);
+    }
+  }
+
+  for (const file of listing.fileListAO.fileList) {
+    entries.push({ ...file, type: 'file', path: `${prefix}${file.name}` });
+  }
+
+  return entries;
+}
+
+async function searchRemoteEntries(client, keyword, folderId, options = {}) {
+  const needle = keyword.toLowerCase();
+  const entries = await collectRemoteEntries(client, folderId, options);
+  return entries.filter((entry) => {
+    return entry.name.toLowerCase().includes(needle) || entry.path.toLowerCase().includes(needle);
+  });
+}
+
 function indexRemoteFilesByPath(files) {
   const index = new Map();
   for (const file of files) {
@@ -98,8 +185,17 @@ async function deleteRemoteFiles(client, files) {
 
 module.exports = {
   collectRemoteTree,
+  collectRemoteEntries,
+  createRemoteFolder,
   deleteRemoteFiles,
+  deleteRemoteItem,
   ensureRemoteFolderPath,
   indexRemoteFilesByPath,
-  listAll
+  moveRemoteItem,
+  listAll,
+  PERSONAL_ROOT_FOLDER_ID,
+  renameRemoteFolder,
+  runBatchTask,
+  resolveFolderId,
+  searchRemoteEntries
 };

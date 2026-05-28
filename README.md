@@ -10,6 +10,10 @@ Support login to cloud disk natively on Ubuntu
 
 List the dirs and files on cloud disk
 
+### Manage
+
+Create, delete, move, rename folders, show roots, quota, tree, and search remote content
+
 ### Download
 
 Download the dir or file from cloud disk

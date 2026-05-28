@@ -4,14 +4,18 @@
   "description": "Ubuntu CLI client for Tianyi Cloud Disk via cloud189-sdk",
   "main": "src/cli.js",
   "bin": {
-    "cloud189": "bin/cloud189.js"
+    "cloud189": "bin/cloud189.js",
+    "cloud189-mcp": "src/mcp-server.js"
   },
   "scripts": {
     "start": "node bin/cloud189.js",
+    "mcp": "node src/mcp-server.js",
     "test": "node --test"
   },
   "dependencies": {
-    "cloud189-sdk": "^1.0.9"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cloud189-sdk": "^1.0.9",
+    "zod": "^3.25.0"
   },
   "engines": {
     "node": ">=16"

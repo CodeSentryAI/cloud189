@@ -59,8 +59,27 @@ function formatListing(response) {
   ]);
 }
 
+function formatEntries(entries) {
+  const rows = entries.map((item) => ({
+    type: item.type,
+    id: item.id,
+    path: item.path || item.name,
+    size: item.type === 'file' ? formatBytes(item.size) : '',
+    modified: item.lastOpTime || item.createDate || ''
+  }));
+
+  return table(rows, [
+    { key: 'type', header: 'TYPE' },
+    { key: 'id', header: 'ID' },
+    { key: 'path', header: 'PATH' },
+    { key: 'size', header: 'SIZE' },
+    { key: 'modified', header: 'MODIFIED' }
+  ]);
+}
+
 module.exports = {
   formatBytes,
+  formatEntries,
   formatListing,
   table
 };

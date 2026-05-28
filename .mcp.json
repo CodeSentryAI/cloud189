@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cloud189": {
+      "command": "node",
+      "args": ["src/mcp-server.js"]
+    }
+  }
+}
