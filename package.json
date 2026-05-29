@@ -1,23 +1,51 @@
 {
-  "name": "cloud189-cli",
-  "version": "0.1.0",
-  "description": "Ubuntu CLI client for Tianyi Cloud Disk via cloud189-sdk",
-  "main": "src/cli.js",
-  "bin": {
-    "cloud189": "bin/cloud189.js",
-    "cloud189-mcp": "src/mcp-server.js"
+  "name": "@agent-safe-storage/cloud189",
+  "version": "1.0.0",
+  "description": "Agent-safe CLI + MCP server for Tianyi Cloud Disk (天翼云盘). Search, download, upload, sync — without giving agents delete/move/overwrite powers.",
+  "license": "MIT",
+  "author": "Agent Safe Storage",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/CodeSentryAI/cloud189"
   },
+  "keywords": [
+    "cloud189",
+    "tianyi",
+    "cloud-storage",
+    "agent-safe",
+    "mcp",
+    "ai-agent",
+    "hermes",
+    "claude-code",
+    "openclaw"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "cloud189": "bin/cloud189.js"
+  },
+  "main": "src/cli.js",
+  "files": [
+    "bin/",
+    "src/",
+    "skills/",
+    "templates/",
+    "install.js",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "start": "node bin/cloud189.js",
+    "test": "node --test",
     "mcp": "node src/mcp-server.js",
-    "test": "node --test"
+    "postinstall": "node install.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "cloud189-sdk": "^1.0.9",
     "zod": "^3.25.0"
   },
-  "engines": {
-    "node": ">=16"
+  "publishConfig": {
+    "access": "public"
   }
 }
