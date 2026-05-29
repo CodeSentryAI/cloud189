@@ -124,13 +124,15 @@ Raw delete, move, rename, upload, sync-upload, and sync-download tools are not e
 
 ## Hermes Skill Setup
 
-A starter skill is included at:
+The Hermes skill is installed at:
 
 ```text
-skills/cloud189-agent-storage/SKILL.md
+~/.hermes/skills/cloud-storage/cloud189/SKILL.md
 ```
 
-Copy or reference that skill from your Hermes skill configuration.
+It is created via `skill_manage(action='create')` and loaded automatically in
+Hermes sessions.  The skill covers MCP tool usage, agent-safe rules, write root
+management, and common pitfalls.
 
 ## Safety Model
 
