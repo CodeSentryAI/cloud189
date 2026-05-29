@@ -1,168 +1,147 @@
-# Agent Safe Storage
+# Cloud189 Agent Safe Storage
 
-A command-based safe cloud storage layer for AI agents. Currently supports Cloud189.
+> **Command-based safe cloud storage for AI agents.**
+> Search, download, upload, sync — without giving agents delete / move / overwrite powers.
 
-面向 AI Agent 的命令式安全云存储层，目前支持天翼云盘。
-
-## What Is This
-
-This project provides a Node.js CLI and MCP server for Tianyi Cloud Disk through `cloud189-sdk`. It is designed for agent workflows that should search, download, upload, and sync files without mounting a cloud drive or giving an agent direct delete, move, rename, or overwrite operations.
-
-## Why Not Mount Cloud Drive
-
-The safety model is command based. Agents work with remote IDs returned by `roots`, `list`, `tree`, and `search`, then use explicit safe commands. Dangerous operations are represented as dry-run plans and require a human to execute raw commands manually.
-
-## Install
+## Quick Install
 
 ```bash
-npm install
-./install.sh
+npm install -g @agent-safe-storage/cloud189
 ```
 
-Run locally without global linking:
+After install, the postinstall script will guide you through MCP setup for
+Hermes / Claude Code / OpenClaw / Cursor.
+
+## First-time Setup
 
 ```bash
-./cloud189 status
-npm start -- status
-```
-
-## QR Login
-
-```bash
+# Login (QR code scan)
 cloud189 login-qr
-cloud189 status
+
+# Initialize agent working directory on cloud disk
+cloud189 init-agent hermes
+
+# Verify
+cloud189 agent-status --json
 ```
 
-Password and SSON login are also available:
+## Use as CLI
 
 ```bash
-cloud189 login --username <name> --password <password>
-cloud189 login-sso --cookie <sson>
+cloud189 search "keyword"
+cloud189 download <remoteId> ./file.md
+cloud189 upload-safe ./result.md <writeRootId>
+cloud189 sync-upload-safe ./results <writeRootId> --once
+cloud189 quota
 ```
 
-## Basic CLI Usage
+## Use as MCP Server
 
 ```bash
-cloud189 roots
-cloud189 list <remoteFolderId>
-cloud189 tree <remoteFolderId> --depth 2
-cloud189 search "keyword" <remoteFolderId> --depth 3
-cloud189 download <remoteId> ./downloads/file.md
+# Manual start
+npx @agent-safe-storage/cloud189 mcp
+
+# Or let your agent runner start it via MCP config (see below)
 ```
 
-Query commands support JSON:
+### Hermes
 
 ```bash
-cloud189 roots --json
-cloud189 list <remoteFolderId> --json
-cloud189 search "keyword" <remoteFolderId> --json
-cloud189 status --json
+hermes mcp add cloud189 \
+  --command node \
+  --args $(npm root -g)/@agent-safe-storage/cloud189/src/mcp-server.js
 ```
+
+### Claude Code
+
+Add to `~/.claude/.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "cloud189": {
+      "command": "node",
+      "args": ["<global-node-modules>/@agent-safe-storage/cloud189/src/mcp-server.js"]
+    }
+  }
+}
+```
+
+### OpenClaw
+
+```yaml
+# ~/.openclaw/config.yaml
+mcp:
+  servers:
+    cloud189:
+      command: node
+      args: ["<global-node-modules>/@agent-safe-storage/cloud189/src/mcp-server.js"]
+```
+
+### Cursor
+
+```json
+// ~/.cursor/mcp.json
+{
+  "mcpServers": {
+    "cloud189": {
+      "command": "node",
+      "args": ["<global-node-modules>/@agent-safe-storage/cloud189/src/mcp-server.js"]
+    }
+  }
+}
+```
+
+See [`templates/MCP_CONFIGS.md`](templates/MCP_CONFIGS.md) for full examples.
 
 ## Agent-Safe Mode
 
-Initialize an agent write root:
+| Allowed | Denied |
+|---|---|
+| status, quota, roots, list, tree, search, download, mkdir-safe, upload-safe, sync-upload-safe, plan | rm, mv, rename-folder, raw upload, raw sync-upload, sync-download |
 
-```bash
-cloud189 init-agent hermes
-cloud189 agent-status
-```
-
-Use safe write commands:
-
-```bash
-cloud189 upload-safe ./result.md <agentWriteRootId>
-cloud189 mkdir-safe <agentWriteRootId> results
-cloud189 sync-upload-safe ./results <agentWriteRootId> --once
-```
-
-Force agent-safe mode for any command:
-
-```bash
-cloud189 rm <remoteId> --mode agent-safe
-```
-
-That returns a denial. Use a plan instead:
-
-```bash
-cloud189 plan rm <remoteId>
-```
-
-Environment overrides:
-
-```bash
-CLOUD189_MODE=agent-safe
-CLOUD189_AGENT_NAME=hermes
-CLOUD189_WRITE_ROOT_ID=123456789
-```
-
-## MCP Setup
-
-Start the MCP server with:
-
-```bash
-npm run mcp
-```
-
-The MCP server defaults to `agent-safe` mode and exposes only safe tools:
-
-```text
-cloud189_status
-cloud189_roots
-cloud189_list
-cloud189_tree
-cloud189_search
-cloud189_quota
-cloud189_download
-cloud189_upload_safe
-cloud189_mkdir_safe
-cloud189_sync_upload_safe
-cloud189_plan
-```
-
-Raw delete, move, rename, upload, sync-upload, and sync-download tools are not exposed.
-
-## Hermes Skill Setup
-
-The Hermes skill is installed at:
-
-```text
-~/.hermes/skills/cloud-storage/cloud189/SKILL.md
-```
-
-It is created via `skill_manage(action='create')` and loaded automatically in
-Hermes sessions.  The skill covers MCP tool usage, agent-safe rules, write root
-management, and common pitfalls.
-
-## Safety Model
-
-Agent-safe mode allows status, quota, roots, list, tree, search, download, safe mkdir, safe upload, safe upload sync, and plan.
-
-It denies remote delete, move, rename, raw upload, raw sync-upload, and sync-download. `upload-safe`, `mkdir-safe`, and `sync-upload-safe` require the destination folder to match the configured agent write root ID in this phase.
-
-`sync-upload-safe` never deletes remote files. Local deletions are ignored, remote-only files are ignored, and conflicting remote changes stop the sync.
+Denied operations return `DENIED_AGENT_SAFE`. Use `cloud189 plan <cmd>` instead.
 
 ## Docs
 
-SDK reference notes:
+| File | Description |
+|---|---|
+| `skills/cloud189/SKILL.md` | Agent skill (included in npm package) |
+| `templates/MCP_CONFIGS.md` | MCP config blocks for all agents |
+| `docs/USER_GUIDE.md` | Full user guide |
+| `docs/EXAMPLES_AND_CHEATSHEET.md` | Examples + cheatsheet |
+| `docs/HERMES_MCP_TUTORIAL.md` | Hermes-specific tutorial |
+| `docs/TEST_REPORT.md` | Test report |
 
-```text
-docs/quick_start.md
-docs/api.md
+## Project Structure
+
+```
+bin/cloud189.js          # CLI entry
+src/cli.js               # Command dispatcher
+src/mcp-server.js        # MCP server (11 tools)
+src/agent-safe.js        # Agent-safe mode enforcement
+src/safe-storage.js      # Safe upload / mkdir / sync / plan
+src/remote.js            # Remote listing / search / tree
+src/transfer.js          # Upload / download
+src/sync.js              # Incremental sync
+src/sync-state.js        # Local sync state persistence
+install.js               # postinstall hook (auto-setup guide)
+skills/cloud189/         # Agent skill
+templates/               # MCP config templates
 ```
 
-Upstream SDK:
+## Running Tests
 
-```text
-https://github.com/wes-lin/cloud189-sdk/tree/main
+```bash
+npm test
+# 26 tests, all mock-based — no cloud credentials needed
 ```
+
+## License
+
+MIT
 
 ## Disclaimer
 
-This project is not affiliated with, endorsed by, or sponsored by China Telecom or Cloud189.
-Cloud189 is currently supported as a storage provider.
-
-## 免责声明
-
-本项目不是天翼云盘官方项目，与中国电信/天翼云盘没有隶属、赞助或背书关系。
-天翼云盘只是当前支持的一个存储后端。
+Not affiliated with, endorsed by, or sponsored by China Telecom / Cloud189.
+Cloud189 is the currently supported storage provider backend.
