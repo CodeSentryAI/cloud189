@@ -30,3 +30,8 @@ pnpm-debug.log*
 # 操作系统生成文件
 .DS_Store
 Thumbs.db
+
+# Cloud189 CLI 敏感文件
+.cloud189-sync.json
+*.token
+*.cookie
