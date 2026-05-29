@@ -25,7 +25,7 @@ const {
   mkdirSafe,
   normalizeEntries,
   normalizeListingItems,
-  planActions,
+  planPayload,
   rootsPayload,
   runSafeUploadPass
 } = require('./safe-storage');
@@ -261,11 +261,16 @@ server.tool(
     args: z.array(z.string()).describe('Arguments for the planned command')
   },
   async (args) => runTool(async () => {
-    const actions = planActions(args.command, args.args);
+    const plan = planPayload(args.command, args.args);
     return {
-      ok: true,
-      summary: `Planned ${actions.length} action${actions.length === 1 ? '' : 's'}.`,
-      data: { dryRun: true, actions }
+      ...plan,
+      data: {
+        dryRun: true,
+        planMode: true,
+        requiresUserDecision: true,
+        actions: plan.actions,
+        userChoices: plan.userChoices
+      }
     };
   })
 );
