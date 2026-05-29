@@ -28,7 +28,7 @@ const {
   mkdirSafe,
   normalizeEntries,
   normalizeListingItems,
-  planActions,
+  planPayload,
   rootsPayload,
   runSafeUploadPass
 } = require('./safe-storage');
@@ -491,13 +491,17 @@ async function main(argv = process.argv.slice(2)) {
 
   if (parsed.command === 'plan') {
     const planCommand = requireArg(parsed.args[0], 'plan command');
-    const actions = planActions(planCommand, parsed.args.slice(1));
-    const payload = { ok: true, dryRun: true, actions };
+    const payload = planPayload(planCommand, parsed.args.slice(1));
     if (wantsJson) {
       writeJsonOutput(payload);
       return;
     }
-    console.log(formatPlan(actions));
+    console.log(payload.summary);
+    console.log(`What this would do: ${payload.intent}`);
+    console.log(`Potential impact: ${payload.potentialImpact}`);
+    console.log(`Safe alternative: ${payload.safeAlternative}`);
+    console.log('User decision required: approve or deny');
+    console.log(formatPlan(payload.actions));
     return;
   }
 

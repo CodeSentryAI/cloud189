@@ -1,0 +1,104 @@
+$ cd ~/Projects/cloud189
+$ ./cloud189 status --json
+{
+  "ok": true,
+  "configDir": "/home/ubuntu/.config/cloud189-cli",
+  "tokenCache": "present",
+  "stateFile": "missing",
+  "lastOperation": null
+}
+
+$ ./cloud189 agent-status --json
+{
+  "ok": true,
+  "login": "ok",
+  "provider": "cloud189",
+  "mode": "agent-safe",
+  "agent": "hermes",
+  "writeRootId": "823511253988854581",
+  "canSearch": true,
+  "canDownload": true,
+  "canUploadSafe": true,
+  "canDelete": false,
+  "canMove": false,
+  "canOverwrite": false
+}
+
+$ hermes mcp test cloud189
+
+  Testing 'cloud189'...
+  Transport: stdio → node
+  Auth: none
+  ✓ Connected (350ms)
+  ✓ Tools discovered: 11
+
+    cloud189_status                      Show safe storage status, login cache state, and config...
+    cloud189_roots                       Show built-in root folder IDs.
+    cloud189_list                        List files and folders in a remote folder.
+    cloud189_tree                        Recursively list remote content.
+    cloud189_search                      Search remote files and folders by keyword.
+    cloud189_download                    Download a remote file or folder to a local path.
+    cloud189_upload_safe                 Upload a local file or directory into the configured ag...
+    cloud189_mkdir_safe                  Create a folder directly inside the configured agent wr...
+    cloud189_sync_upload_safe            Run a deletion-free one-shot upload sync into the confi...
+    cloud189_plan                        Create a dry-run plan for a dangerous operation. The pl...
+    cloud189_quota                       Show account storage usage.
+
+
+$ ./cloud189 plan rm 123 --json --mode agent-safe
+{
+  "ok": true,
+  "dryRun": true,
+  "planMode": true,
+  "requiresUserDecision": true,
+  "summary": "PLAN MODE: review this dangerous operation before any execution.",
+  "command": "rm",
+  "args": [
+    "123"
+  ],
+  "intent": "PLAN MODE: delete remote item 123.",
+  "potentialImpact": "This may permanently remove cloud data or make it unavailable from Cloud189.",
+  "safeAlternative": "Prefer leaving the item untouched unless the user explicitly approves deletion.",
+  "actions": [
+    {
+      "action": "delete",
+      "type": "unknown",
+      "id": "123",
+      "name": "123",
+      "risk": "requires-confirm"
+    }
+  ],
+  "userChoices": [
+    "approve",
+    "deny"
+  ]
+}
+
+$ ./cloud189 rm 123 --json --mode agent-safe
+{
+  "ok": false,
+  "error": {
+    "code": "DENIED_AGENT_SAFE",
+    "message": "rm is not allowed in agent-safe mode.",
+    "suggestion": "Use cloud189 plan rm <id> and ask the user to confirm."
+  }
+}
+
+$ ./cloud189 roots --json --mode agent-safe
+{
+  "ok": true,
+  "items": [
+    {
+      "type": "root",
+      "id": "-11",
+      "name": "personal"
+    },
+    {
+      "type": "root",
+      "id": "0",
+      "name": "syncdisk"
+    }
+  ]
+}
+
+Demo complete: Cloud189 MCP is installed, safe tools work, dangerous rm is denied.

@@ -237,12 +237,70 @@ function planActions(command, args) {
   throw error;
 }
 
+function planDescription(command, args) {
+  if (command === 'rm') {
+    return {
+      intent: `PLAN MODE: delete remote item ${args[0]}.`,
+      potentialImpact: 'This may permanently remove cloud data or make it unavailable from Cloud189.',
+      safeAlternative: 'Prefer leaving the item untouched unless the user explicitly approves deletion.'
+    };
+  }
+  if (command === 'mv') {
+    return {
+      intent: `PLAN MODE: move remote item ${args[0]} to folder ${args[1]}.`,
+      potentialImpact: 'This changes the remote organization and may break saved remoteId/path assumptions.',
+      safeAlternative: 'Prefer copying/downloading for review, or ask the user to move it manually.'
+    };
+  }
+  if (command === 'rename-folder') {
+    return {
+      intent: `PLAN MODE: rename remote folder ${args[0]} to ${args[1]}.`,
+      potentialImpact: 'This changes a shared folder name and may confuse users or automations that expect the old name.',
+      safeAlternative: 'Prefer creating a new safe folder and uploading new outputs there.'
+    };
+  }
+  if (command === 'upload') {
+    return {
+      intent: `PLAN MODE: upload ${args[0]} to remote folder ${args[1]}.`,
+      potentialImpact: 'Raw upload may overwrite or conflict with existing remote files depending on Cloud189 behavior.',
+      safeAlternative: 'Use upload-safe to refuse same-name conflicts automatically.'
+    };
+  }
+  if (command === 'sync-upload') {
+    return {
+      intent: `PLAN MODE: raw sync-upload ${args[0]} to remote folder ${args[1]}.`,
+      potentialImpact: 'Raw sync-upload may delete duplicate remote files or replace changed remote files.',
+      safeAlternative: 'Use sync-upload-safe for deletion-free, conflict-stopping sync.'
+    };
+  }
+  planActions(command, args);
+  return {};
+}
+
+function planPayload(command, args) {
+  const actions = planActions(command, args);
+  const description = planDescription(command, args);
+  return {
+    ok: true,
+    dryRun: true,
+    planMode: true,
+    requiresUserDecision: true,
+    summary: 'PLAN MODE: review this dangerous operation before any execution.',
+    command,
+    args,
+    ...description,
+    actions,
+    userChoices: ['approve', 'deny']
+  };
+}
+
 module.exports = {
   assertNoUploadConflict,
   mkdirSafe,
   normalizeEntries,
   normalizeListingItems,
   planActions,
+  planPayload,
   rootsPayload,
   runSafeUploadPass,
   safeSyncStatePath
