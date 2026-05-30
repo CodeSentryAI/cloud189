@@ -1,7 +1,7 @@
 {
   "name": "@codesentryai/cloud189-setup",
   "version": "1.0.0",
-  "description": "One-command setup for Cloud189 Agent Storage. Installs CLI + MCP, runs QR login, creates /AgentStorage folders, enables Data Leak Guard, and prints MCP config.",
+  "description": "Cloud189 Agent Storage one-command installer — installs CLI + MCP, runs QR login, creates /AgentStorage folders, enables Data Leak Guard, prints MCP config. Free cloud storage for AI agents powered by Tianyi Cloud 189 / 天翼云盘.",
   "license": "MIT",
   "author": "CodeSentryAI",
   "repository": {
@@ -11,15 +11,23 @@
   "keywords": [
     "cloud189",
     "tianyi",
-    "cloud-storage",
-    "agent-safe",
-    "setup",
-    "mcp",
-    "ai-agent",
+    "tianyi-cloud",
+    "189cloud",
+    "agent-storage",
+    "ai-agent-storage",
+    "hermes-agent",
     "claude-code",
+    "openclaw",
     "cursor",
-    "hermes",
-    "openclaw"
+    "mcp",
+    "mcp-server",
+    "cloud-storage",
+    "backup",
+    "automation",
+    "vps-agent",
+    "feishu",
+    "setup",
+    "installer"
   ],
   "engines": {
     "node": ">=18"
@@ -27,11 +35,12 @@
   "bin": {
     "cloud189-setup": "bin/cloud189-setup.js"
   },
-  "main": "src/setup.js",
+  "main": "bin/cloud189-setup.js",
   "files": [
     "bin/",
     "src/",
     "README.md"
   ],
+  "dependencies": {},
   "preferGlobal": true
 }

@@ -1,127 +1,156 @@
 # Cloud189 Agent Storage
 
-> **Free cold storage for AI agent artifacts.**
-> One-command setup. QR login. Data Leak Guard. MCP for agents.
+> **Secure, reliable, extensible, free cloud storage for AI agents, powered by Tianyi Cloud 189 / 天翼云盘.**
 
-Cloud189 Agent Storage gives your AI agent a free, persistent, encrypted cold-storage workspace in your own Tianyi Cloud 189 account (天翼云盘). It's the easiest way to store memory, reports, logs, backups, and work results — without giving agents dangerous powers like delete or overwrite.
+Cloud189 Agent Storage lets Hermes, Claude Code, OpenClaw, Cursor, VPS agents, and automation scripts store daily memory, work results, reports, logs, and backups in Tianyi Cloud 189.
 
-## One-Command Setup
+## Agent Install
+
+Ask your agent:
+
+> Install Cloud189 Agent Storage from CodeSentryAI. Use npm package @codesentryai/cloud189 and MCP package @codesentryai/cloud189-mcp. Read https://github.com/CodeSentryAI/cloud189/blob/main/llms.txt first.
+
+Or run:
 
 ```bash
+# CLI + MCP
+npm install -g @codesentryai/cloud189
+npm install -g @codesentryai/cloud189-mcp
+
+# Or one-command setup
 npx @codesentryai/cloud189-setup
+
+# Login (scan QR code with 天翼云盘 app)
+cloud189 login-qr
 ```
 
-This will:
-1. Install the `cloud189` CLI and `cloud189-mcp` server
-2. Show a QR code → scan with the 天翼云盘 app
-3. Create `/AgentStorage/{memory,reports,logs,backups}` folder structure
-4. Enable Data Leak Guard (blocks secret uploads by default)
-5. Print MCP config for Claude Code / Cursor / Hermes
-6. Test upload to verify everything works
+## Register Tianyi Cloud 189
 
-That's it. Your agent now has free cloud storage.
+**Official website:** https://cloud.189.cn/
 
-## Packages
+1. Register a free account at https://cloud.189.cn/
+2. Download the 天翼云盘 app (iOS/Android)
+3. Run `cloud189 login-qr` and scan the code
 
-| Package | Purpose |
+No API keys. No OAuth. Just scan and go.
+
+## What It Does
+
+| Use Case | Folder |
 |---|---|
-| `@codesentryai/cloud189` | CLI for humans — login, upload, download, sync, status |
-| `@codesentryai/cloud189-mcp` | MCP server for agents — safe upload, download, search, plan |
-| `@codesentryai/cloud189-setup` | One-command setup — installs everything, creates folders, enables safety |
+| Agent memory, knowledge base | `/AgentStorage/memory/` |
+| Work results, generated files | `/AgentStorage/work-results/` |
+| Reports, analysis | `/AgentStorage/reports/` |
+| Task logs, audit trails | `/AgentStorage/logs/` |
+| Project backups, snapshots | `/AgentStorage/backups/` |
 
 ## Why Cloud189 Agent Storage?
 
-Not Google Drive MCP. Not S3 MCP. Not rclone.
-
-| Feature | Cloud189 Agent Storage | Others |
+| | Cloud189 Agent Storage | Others (rclone, Drive MCP, S3 MCP) |
 |---|---|---|
-| **Cost** | Free consumer cloud disk | Paid object storage or commercial cloud |
-| **Login** | QR code scan — no API keys | OAuth flow, API keys, service accounts |
-| **Install** | `npx @codesentryai/cloud189-setup` | Manual config, credentials, setup |
-| **Secret protection** | Data Leak Guard — blocks `.env`, keys, tokens by default | No built-in policy |
-| **Agent safety** | No delete, no overwrite, by default | Full CRUD unless manually restricted |
-| **Encryption** | AES-256-GCM encrypted session storage | Varies |
-| **MCP tools** | Purpose-built for agent workflows | Generic file operations |
-| **Use case** | Cold storage, backups, memory, reports | General file sync |
+| **Cost** | Free consumer cloud disk | Paid or commercial |
+| **Login** | QR scan — no API keys | OAuth, API keys, service accounts |
+| **Install** | `npx @codesentryai/cloud189-setup` | Manual config |
+| **Secret protection** | Data Leak Guard (blocks .env, keys) | None built-in |
+| **Agent safety** | No delete/overwrite by default | Full CRUD unless restricted |
+| **Session** | AES-256-GCM encrypted | Varies |
+| **Protocol** | MCP + CLI + Skills | CLI only or generic MCP |
+| **Use case** | Agent cold storage, backups, memory | General file sync |
 
-## Safety Architecture
+## Security Definition
 
-### Data Leak Guard
-Agents can store artifacts, but cannot silently upload secrets.
+We define security concretely — not just "secure":
 
-- **Blocks:** `~/.ssh/*`, `.env`, `*.pem`, `id_rsa`, etc.
-- **Detects:** API keys, bearer tokens, private key blocks, AWS keys
-- **Policy:** Interactive → ask | Agent/MCP → deny by default | `--force-sensitive` to override
-- **Audit:** All decisions logged to `~/.config/cloud189/audit.log`
+- **Secure** = no password stored by agent, QR login, local session file, explicit upload/download, no mount daemon, JSON audit logs
+- **Reliable** = explicit operations, resumable upload/download, retry, checksum
+- **Extensible** = CLI + MCP + skills + scriptable JSON
+- **Free** = uses your own Tianyi Cloud 189 account
 
-### Agent-Safe Mode
-Uploads are allowed, but dangerous commands are denied:
-- **Allowed:** login, search, download, upload, mkdir, status
-- **Denied:** rm, mv, rename-folder
+## Security Notes
 
-### Session Security
-- QR login → session stored as AES-256-GCM encrypted `session.enc`
-- File permissions: `0600`, directory: `0700`
-- Never printed: access tokens, refresh tokens, session keys
+Cloud189 Agent Storage is designed for **agent work artifacts**: reports, logs, generated files, backups.
 
-## Storage Layout (on cloud disk)
+**Do NOT upload:**
+- Private keys (RSA, EC, Ed25519)
+- Seed phrases
+- API keys and tokens
+- `.env` files
+- Production secrets
+- Unencrypted customer data
 
+**For sensitive data: encrypt before upload.**
+
+The Data Leak Guard scans all uploads and blocks files containing secrets by default. Configure policy at `~/.config/cloud189/security/policy.yaml`.
+
+## MCP Configuration
+
+### Claude Code (~/.claude/settings.json)
+
+```json
+{
+  "mcpServers": {
+    "cloud189": {
+      "command": "npx",
+      "args": ["-y", "@codesentryai/cloud189-mcp"]
+    }
+  }
+}
 ```
-/AgentStorage/
-├── memory/      — agent memory, session summaries, knowledge base
-├── reports/     — generated reports, analysis results
-├── logs/        — task logs, audit trails, execution history
-└── backups/     — project backups, snapshots, archives
+
+### Cursor (~/.cursor/mcp.json)
+
+```json
+{
+  "mcpServers": {
+    "cloud189": {
+      "command": "npx",
+      "args": ["-y", "@codesentryai/cloud189-mcp"]
+    }
+  }
+}
 ```
+
+### Hermes / OpenClaw
+
+See [docs/mcp-config.md](docs/mcp-config.md) for all platforms.
 
 ## Quick Reference
 
 ```bash
-# Check status
-cloud189 status
-cloud189 status --json
-
-# Upload a file (safe — no overwrite)
-cloud189 upload-safe /path/to/file <folderId>
-
-# Download
-cloud189 download <remoteId> /local/path
-
-# Search
-cloud189 search "keyword" --depth 3
-
-# Agent status (for AI agents)
-cloud189 agent-status --json
-
-# Logout
-cloud189 logout
+cloud189 login-qr                              # scan QR with 天翼云盘 app
+cloud189 status --json                         # storage & session info
+cloud189 list -11 --json                       # list root files
+cloud189 upload-safe <file> <folderId> --json  # upload (no overwrite)
+cloud189 download <fileId> <path> --json       # download
+cloud189 mkdir -11 MyFolder --json             # create folder
+cloud189 search "keyword" --json               # search files
+cloud189 agent-status --json                   # agent config + safety status
+cloud189 logout                                # delete local session
 ```
 
-## MCP Configuration
+## Packages
 
-### Claude Code (`~/.claude/settings.json`)
-```json
-{
-  "mcpServers": {
-    "cloud189": {
-      "command": "npx",
-      "args": ["@codesentryai/cloud189-mcp"]
-    }
-  }
-}
-```
+| Package | Install | Purpose |
+|---|---|---|
+| `@codesentryai/cloud189` | `npm i -g @codesentryai/cloud189` | CLI for humans |
+| `@codesentryai/cloud189-mcp` | `npm i -g @codesentryai/cloud189-mcp` | MCP server for agents |
+| `@codesentryai/cloud189-setup` | `npx @codesentryai/cloud189-setup` | One-command installer |
 
-### Cursor (`~/.cursor/mcp.json`)
-```json
-{
-  "mcpServers": {
-    "cloud189": {
-      "command": "npx",
-      "args": ["@codesentryai/cloud189-mcp"]
-    }
-  }
-}
-```
+## Documentation
+
+- [docs/agent-install.md](docs/agent-install.md) — Agent install guide
+- [docs/mcp-config.md](docs/mcp-config.md) — MCP config for all platforms
+- [docs/security.md](docs/security.md) — Security architecture
+- [docs/hermes.md](docs/hermes.md) — Hermes integration
+- [docs/feishu-hermes-agent-storage.md](docs/feishu-hermes-agent-storage.md) — Feishu + Hermes flow
+
+## Launch Message
+
+> I open-sourced Cloud189 Agent Storage: secure, reliable, extensible, free cloud storage for AI agents. It gives Hermes / Claude Code / OpenClaw / VPS agents a persistent storage backend for memory, work results, reports, logs, and backups using Tianyi Cloud 189 / 天翼云盘.
+>
+> Install: `npm install -g @codesentryai/cloud189` + `npm install -g @codesentryai/cloud189-mcp`
+> Login: `cloud189 login-qr`
+> Agent docs: https://github.com/CodeSentryAI/cloud189/blob/main/llms.txt
 
 ## License
 

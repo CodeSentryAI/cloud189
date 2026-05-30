@@ -1,0 +1,115 @@
+# Cloud189 Agent Storage
+
+Cloud189 Agent Storage is an open-source CLI and MCP server that gives AI agents secure, reliable, extensible, free cloud storage using Tianyi Cloud 189 / 天翼云盘.
+
+**Repository:** https://github.com/CodeSentryAI/cloud189
+
+**Packages:**
+- `@codesentryai/cloud189` — CLI for humans
+- `@codesentryai/cloud189-mcp` — MCP server for agents
+- `@codesentryai/cloud189-setup` — One-command installer
+
+## What It Does
+
+AI agents (Hermes, Claude Code, OpenClaw, Cursor, VPS automation) use Cloud189 as **persistent storage** for:
+- Agent memory and session summaries
+- Work results and generated reports
+- Logs and audit trails
+- Project backups and snapshots
+
+## Install
+
+```bash
+# CLI
+npm install -g @codesentryai/cloud189
+
+# MCP server
+npm install -g @codesentryai/cloud189-mcp
+
+# One-command setup (installs both + configures)
+npx @codesentryai/cloud189-setup
+```
+
+## Login
+
+```bash
+cloud189 login-qr
+```
+
+Opens a QR code. Scan with the 天翼云盘 (Tianyi Cloud) app. No API keys needed.
+
+Official Tianyi Cloud 189 website: https://cloud.189.cn/
+
+## Agent-Safe Rules
+
+- Always use `--json` output
+- Never guess file IDs — always list/search first, then operate by returned ID
+- Do not upload private keys, .env files, passwords, or API tokens
+- Do not delete files unless explicitly asked
+
+## Common Commands
+
+```bash
+cloud189 login-qr                          # QR login
+cloud189 list --json                       # list files
+cloud189 upload <localPath> <folderId> --json
+cloud189 download <fileId> --json
+cloud189 mkdir <parentFolderId> <name> --json
+cloud189 search <keyword> --json
+cloud189 status --json
+cloud189 agent-status --json
+cloud189 logout
+```
+
+## MCP Server
+
+```
+cloud189-mcp
+```
+
+**MCP Tools:**
+- `cloud189_login_qr` — Show QR code for login
+- `cloud189_list` — List files/folders
+- `cloud189_search` — Search files
+- `cloud189_upload` — Upload file
+- `cloud189_download` — Download file
+- `cloud189_mkdir` — Create folder
+- `cloud189_delete` — Delete file/folder (denied in agent-safe mode)
+- `cloud189_backup_directory` — Sync upload a directory
+
+## MCP Config Snippet
+
+```json
+{
+  "mcpServers": {
+    "cloud189": {
+      "command": "npx",
+      "args": ["-y", "@codesentryai/cloud189-mcp"]
+    }
+  }
+}
+```
+
+## Default Folder Layout
+
+```
+/AgentStorage/
+├── memory/         — agent memory, session summaries
+├── work-results/   — generated work artifacts
+├── reports/        — analysis reports
+├── logs/           — task logs
+└── backups/        — project backups
+```
+
+## Security
+
+- **No passwords stored by agent** — QR login only
+- **Encrypted session** — AES-256-GCM, file mode 0600
+- **Explicit operations** — no silent uploads
+- **No mount daemon** — upload/download only on demand
+- **JSON audit logs** — all operations tracked
+- **Data Leak Guard** — blocks .env, keys, tokens by default
+
+## Ask Your Agent
+
+> Install Cloud189 Agent Storage from CodeSentryAI. Use npm package @codesentryai/cloud189 and MCP package @codesentryai/cloud189-mcp. Read https://github.com/CodeSentryAI/cloud189/blob/main/llms.txt first.
