@@ -30,38 +30,23 @@ function colors() {
 }
 
 const c = colors();
-
-function pkgRoot() {
-  // Works after `npm install -g` because require.resolve follows the real path
+function findMcpBinary() {
   try {
-    const entry = require.resolve(PKG_NAME);
-    let dir = path.dirname(entry);
-    for (let i = 0; i < 3; i++) dir = path.dirname(dir);
-    return dir;
-  } catch {
-    return null;
-  }
-}
-
-function findMcpServerJs() {
-  // resolution order:
-  // 1. global bin → node_modules/.../src/mcp-server.js
-  // 2. CWD-based local install
-  // 3. this file's sibling src/mcp-server.js
-  const candidates = [];
-  const root = pkgRoot();
-  if (root) {
-    candidates.push(path.join(root, 'node_modules', PKG_NAME, 'src', 'mcp-server.js'));
-  }
-  candidates.push(path.resolve(__dirname, '..', 'src', 'mcp-server.js'));
-  candidates.push(path.resolve(process.cwd(), 'node_modules', PKG_NAME, 'src', 'mcp-server.js'));
+    const result = execSync('which cloud189-mcp 2>/dev/null || echo ""', { encoding: 'utf8' }).trim();
+    if (result) return result;
+  } catch {}
+  // Fallback: try common global bin locations
+  const candidates = [
+    path.join(path.dirname(process.execPath), 'cloud189-mcp'),
+    '/usr/local/bin/cloud189-mcp',
+  ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
-  return null;
+  return 'cloud189-mcp'; // trust PATH at runtime
 }
 
-const MCP_JS = findMcpServerJs();
+const MCP_BIN = findMcpBinary();
 
 // --- agent config dirs -------------------------------------------------------
 
@@ -77,10 +62,10 @@ function detectAgents() {
       name: 'Hermes',
       slug: 'hermes',
       mcpConfigFile: hermesMcpCfg,
-      mcpConfigKey: 'mcp.servers',       // YAML key in hermes config
+      mcpConfigKey: 'mcp.servers',
       skillDir: path.join(hermesSkills, 'cloud-storage', 'cloud189'),
       mcpSetupCmd:
-        `hermes mcp add cloud189 --command node --args ${MCP_JS || '<pkg>/src/mcp-server.js'}`,
+        "hermes mcp add cloud189 --command cloud189-mcp",
     });
   }
 
@@ -97,15 +82,10 @@ function detectAgents() {
       mcpFormat: 'json',
       skillDir: path.join(claudeSkills, 'cloud189'),
       mcpJsonConfig: {
-        mcpServers: {
-          cloud189: {
-            command: 'node',
-            args: [MCP_JS || `${MCP_JS}`],
-          },
-        },
+        mcpServers: { cloud189: { command: 'cloud189-mcp' } },
       },
       mcpSetupCmd:
-        `Run /mcp-add in Claude Code and paste:\n    { "mcpServers": { "cloud189": { "command": "node", "args": ["${MCP_JS || '<pkg>/src/mcp-server.js'}"] } } }`,
+        'Run /mcp-add in Claude Code and paste:\n    { "mcpServers": { "cloud189": { "command": "cloud189-mcp" } } }',
     });
   }
 
@@ -118,7 +98,7 @@ function detectAgents() {
       mcpConfigFile: path.join(openclawDir, 'config.yaml'),
       skillDir: path.join(openclawDir, 'skills', 'cloud189'),
       mcpSetupCmd:
-        `Add to ~/.openclaw/config.yaml:\n    mcp:\n      servers:\n        cloud189:\n          command: node\n          args: ["${MCP_JS || '<pkg>/src/mcp-server.js'}"]`,
+        'Add to ~/.openclaw/config.yaml:\n    mcp:\n      servers:\n        cloud189:\n          command: cloud189-mcp',
     });
   }
 
@@ -131,15 +111,10 @@ function detectAgents() {
       mcpConfigFile: cursorMcp,
       mcpFormat: 'json',
       mcpJsonConfig: {
-        mcpServers: {
-          cloud189: {
-            command: 'node',
-            args: [MCP_JS || '<pkg>/src/mcp-server.js'],
-          },
-        },
+        mcpServers: { cloud189: { command: 'cloud189-mcp' } },
       },
       mcpSetupCmd:
-        `Add to ~/.cursor/mcp.json:\n    { "mcpServers": { "cloud189": { "command": "node", "args": ["${MCP_JS || '<pkg>/src/mcp-server.js'}"] } } }`,
+        'Add to ~/.cursor/mcp.json:\n    { "mcpServers": { "cloud189": { "command": "cloud189-mcp" } } }',
     });
   }
 
@@ -292,16 +267,10 @@ function main() {
     console.log('');
     console.log(c.yellow('No AI agent detected. To use Cloud189 with your agent:'));
     console.log('');
-    if (!MCP_JS) {
-      console.log(c.yellow('  Could not locate mcp-server.js — is the package fully installed?'));
-    }
-    console.log('  Generic MCP config:');
+    console.log('  Generic MCP config (for ~/.cursor/mcp.json or ~/.claude/.mcp.json):');
     console.log(c.cyan(JSON.stringify({
       mcpServers: {
-        cloud189: {
-          command: 'node',
-          args: [MCP_JS || '<path-to-mcp-server.js>'],
-        },
+        cloud189: { command: 'cloud189-mcp' },
       },
     }, null, 2)));
     console.log('');

@@ -1,0 +1,47 @@
+{
+  "name": "@codesentryai/cloud189",
+  "version": "1.0.0",
+  "description": "Agent-safe CLI for Tianyi Cloud Disk (天翼云盘) by CodeSentryAI. Search, download, upload, sync — without giving agents delete/move/overwrite powers.",
+  "license": "MIT",
+  "author": "CodeSentryAI",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/CodeSentryAI/cloud189"
+  },
+  "keywords": [
+    "cloud189",
+    "tianyi",
+    "cloud-storage",
+    "agent-safe",
+    "cli",
+    "ai-agent",
+    "hermes",
+    "claude-code",
+    "openclaw"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "cloud189": "bin/cloud189.js"
+  },
+  "main": "src/cli.js",
+  "files": [
+    "bin/",
+    "src/",
+    "skills/",
+    "templates/",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "postinstall": "node install.js"
+  },
+  "dependencies": {
+    "cloud189-sdk": "^1.0.9"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

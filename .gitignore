@@ -36,3 +36,6 @@ Thumbs.db
 *.token
 *.cookie
 *.tgz
+
+# Old root-level binary (pre-monorepo)
+cloud189

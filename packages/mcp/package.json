@@ -1,0 +1,39 @@
+{
+  "name": "@codesentryai/cloud189-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Cloud189 agent-safe cloud storage. Exposes 11 tools for search, download, upload-safe, sync-upload-safe, and plan mode.",
+  "license": "MIT",
+  "author": "CodeSentryAI",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/CodeSentryAI/cloud189"
+  },
+  "keywords": [
+    "cloud189",
+    "tianyi",
+    "cloud-storage",
+    "agent-safe",
+    "mcp",
+    "ai-agent",
+    "hermes",
+    "claude-code",
+    "openclaw"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "cloud189-mcp": "src/mcp-server.js"
+  },
+  "files": [
+    "src/"
+  ],
+  "dependencies": {
+    "@codesentryai/cloud189": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
