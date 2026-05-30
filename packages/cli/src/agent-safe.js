@@ -17,9 +17,12 @@ const SAFE_COMMANDS = new Set([
   'login',
   'login-qr',
   'login-sso',
+  'logout',
   'mkdir',
   'mkdir-safe',
+  'upload',
   'upload-safe',
+  'sync-upload',
   'sync-upload-safe',
   'sync-download',
   'plan',
@@ -30,9 +33,7 @@ const SAFE_COMMANDS = new Set([
 const DANGEROUS_COMMANDS = new Set([
   'rm',
   'mv',
-  'rename-folder',
-  'upload',
-  'sync-upload'
+  'rename-folder'
 ]);
 
 function defaultAgentConfig() {

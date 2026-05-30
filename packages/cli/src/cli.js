@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { createClient } = require('./client');
-const { getConfigDir, getStatePath, getTokenPath } = require('./config');
+const { getConfigDir, getStatePath } = require('./config');
+const { sessionStatus } = require('./session');
 const { formatBytes, formatEntries, formatListing, table } = require('./format');
 const {
   assertCommandAllowed,
@@ -59,7 +60,8 @@ const COMMANDS = [
   'plan <rm|mv|rename-folder|upload|sync-upload> ...',
   'init-agent <name>',
   'agent-status',
-  'status'
+  'status',
+  'logout'
 ];
 
 const BOOLEAN_OPTIONS = new Set(['json', 'help', 'dir', 'once', 'force-sensitive', 'redact']);
@@ -154,14 +156,18 @@ function quotaPayload(info) {
   return { ok: true, total, used, available, raw: info };
 }
 
-function statusPayload() {
+function statusPayload(sessionInfo) {
   const statePath = getStatePath();
   const state = syncState.loadState(statePath);
   const operations = state.operations || [];
   return {
     ok: true,
+    loggedIn: sessionInfo?.loggedIn ?? false,
+    storage: sessionInfo?.storage || 'none',
+    account: sessionInfo?.account || null,
+    sessionPath: sessionInfo?.sessionPath || null,
     configDir: getConfigDir(),
-    tokenCache: fs.existsSync(getTokenPath()) ? 'present' : 'missing',
+    tokenCache: sessionInfo?.loggedIn ? 'encrypted' : 'missing',
     stateFile: fs.existsSync(statePath) ? statePath : 'missing',
     lastOperation: operations.length ? operations[operations.length - 1] : null
   };
@@ -169,7 +175,10 @@ function statusPayload() {
 
 function printStatusText(payload) {
   console.log(`Config: ${payload.configDir}`);
-  console.log(`Token cache: ${payload.tokenCache}`);
+  console.log(`Session: ${payload.loggedIn ? 'logged in + ' + payload.storage : 'not logged in'}`);
+  if (payload.loggedIn && payload.account) {
+    console.log(`Account: ${payload.account}`);
+  }
   console.log(`State file: ${payload.stateFile}`);
   if (payload.lastOperation) {
     const last = payload.lastOperation;
@@ -198,10 +207,11 @@ async function ensureNamedFolder(client, parentId, name) {
   return createRemoteFolder(client, parentId, name);
 }
 
-function agentStatusPayload(context) {
+function agentStatusPayload(context, sessionInfo) {
   return {
     ok: true,
-    login: fs.existsSync(getTokenPath()) ? 'ok' : 'missing',
+    login: sessionInfo?.loggedIn ? 'ok' : 'missing',
+    storage: sessionInfo?.storage || 'none',
     provider: context.provider,
     mode: context.mode,
     agent: context.agent.name,
@@ -347,7 +357,8 @@ async function main(argv = process.argv.slice(2)) {
     const password = requireArg(parsed.options.password, '--password');
     const client = createClient({ username, password });
     await client.getSession();
-    console.log(`Login succeeded. Token cache: ${getTokenPath()}`);
+    console.log('Login successful.');
+    console.log('Session stored securely.');
     return;
   }
 
@@ -365,7 +376,8 @@ async function main(argv = process.argv.slice(2)) {
       }
     });
     await client.getSession();
-    console.log(`Login succeeded. Token cache: ${getTokenPath()}`);
+    console.log('Login successful.');
+    console.log('Session stored securely.');
     return;
   }
 
@@ -373,7 +385,8 @@ async function main(argv = process.argv.slice(2)) {
     const ssonCookie = requireArg(parsed.options.cookie, '--cookie');
     const client = createClient({ ssonCookie });
     await client.getSession();
-    console.log(`Login succeeded. Token cache: ${getTokenPath()}`);
+    console.log('Login successful.');
+    console.log('Session stored securely.');
     return;
   }
 
@@ -614,12 +627,20 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   if (parsed.command === 'status') {
-    const payload = statusPayload();
+    const sessionInfo = await sessionStatus();
+    const payload = statusPayload(sessionInfo);
     if (wantsJson) {
       writeJsonOutput(payload);
       return;
     }
     printStatusText(payload);
+    return;
+  }
+
+  if (parsed.command === 'logout') {
+    const { clearSession } = require('./session');
+    await clearSession();
+    console.log('Logged out. Local session removed.');
     return;
   }
 
@@ -680,7 +701,8 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   if (parsed.command === 'agent-status') {
-    const payload = agentStatusPayload(context);
+    const sessionInfo = await sessionStatus();
+    const payload = agentStatusPayload(context, sessionInfo);
     if (wantsJson) {
       writeJsonOutput(payload);
       return;
