@@ -6,7 +6,7 @@
 ## Quick Install
 
 ```bash
-npm install -g @agent-safe-storage/cloud189
+npm install -g @codesentryai/cloud189
 ```
 
 After install, the postinstall script will guide you through MCP setup for
@@ -39,7 +39,7 @@ cloud189 quota
 
 ```bash
 # Manual start
-npx @agent-safe-storage/cloud189 mcp
+npx @codesentryai/cloud189 mcp
 
 # Or let your agent runner start it via MCP config (see below)
 ```
@@ -49,7 +49,7 @@ npx @agent-safe-storage/cloud189 mcp
 ```bash
 hermes mcp add cloud189 \
   --command node \
-  --args $(npm root -g)/@agent-safe-storage/cloud189/src/mcp-server.js
+  --args $(npm root -g)/@codesentryai/cloud189/src/mcp-server.js
 ```
 
 ### Claude Code
@@ -61,7 +61,7 @@ Add to `~/.claude/.mcp.json`:
   "mcpServers": {
     "cloud189": {
       "command": "node",
-      "args": ["<global-node-modules>/@agent-safe-storage/cloud189/src/mcp-server.js"]
+      "args": ["<global-node-modules>/@codesentryai/cloud189/src/mcp-server.js"]
     }
   }
 }
@@ -75,7 +75,7 @@ mcp:
   servers:
     cloud189:
       command: node
-      args: ["<global-node-modules>/@agent-safe-storage/cloud189/src/mcp-server.js"]
+      args: ["<global-node-modules>/@codesentryai/cloud189/src/mcp-server.js"]
 ```
 
 ### Cursor
@@ -86,7 +86,7 @@ mcp:
   "mcpServers": {
     "cloud189": {
       "command": "node",
-      "args": ["<global-node-modules>/@agent-safe-storage/cloud189/src/mcp-server.js"]
+      "args": ["<global-node-modules>/@codesentryai/cloud189/src/mcp-server.js"]
     }
   }
 }
@@ -98,7 +98,7 @@ See [`templates/MCP_CONFIGS.md`](templates/MCP_CONFIGS.md) for full examples.
 
 | Allowed | Denied |
 |---|---|
-| status, quota, roots, list, tree, search, download, mkdir-safe, upload-safe, sync-upload-safe, plan | rm, mv, rename-folder, raw upload, raw sync-upload, sync-download |
+| login, login-qr, login-sso, status, quota, roots, list, tree, search, download, mkdir, mkdir-safe, upload-safe, sync-upload-safe, sync-download, plan | rm, mv, rename-folder, raw upload, raw sync-upload |
 
 Denied operations return `DENIED_AGENT_SAFE`. Use `cloud189 plan <cmd>` instead.
 
@@ -134,7 +134,7 @@ templates/               # MCP config templates
 
 ```bash
 npm test
-# 26 tests, all mock-based — no cloud credentials needed
+# 33 tests, all mock-based — no cloud credentials needed
 ```
 
 ## License

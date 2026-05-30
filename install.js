@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * postinstall hook for @agent-safe-storage/cloud189
+ * postinstall hook for @codesentryai/cloud189
  *
  * - On `npm install -g`: guides the user to configure their agent MCP.
  * - On `npm install` (local / sub-dep): stays quiet unless VERBOSE=1.
@@ -13,8 +13,8 @@ const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const PKG_NAME = '@agent-safe-storage/cloud189';
-const PKG_DISPLAY = 'Cloud189 Agent Safe Storage';
+const PKG_NAME = '@codesentryai/cloud189';
+const PKG_DISPLAY = 'Cloud189 by CodeSentryAI';
 
 // --- helpers ----------------------------------------------------------------
 
@@ -153,7 +153,7 @@ const SKILL_MD = `---
 name: cloud189
 description: "Use when the user asks to interact with Tianyi Cloud Disk (天翼云盘) via the agent-safe cloud189 CLI/MCP. Covers search, download, upload-safe, sync-upload-safe, plan mode, agent-safe rules, and write-root management."
 version: 1.0.0
-author: Agent Safe Storage
+author: CodeSentryAI
 license: MIT
 metadata:
   hermes:
@@ -187,10 +187,10 @@ delete, move, rename, or overwrite remote files.
 
 ## Agent-Safe Mode
 
-**Allowed:** status, quota, roots, list, tree, search, download, mkdir-safe,
-upload-safe, sync-upload-safe, plan
+**Allowed:** login, login-qr, login-sso, status, quota, roots, list, tree, search,
+download, mkdir, mkdir-safe, upload-safe, sync-upload-safe, sync-download, plan
 
-**Denied:** rm, mv, rename-folder, raw upload, raw sync-upload, sync-download
+**Denied:** rm, mv, rename-folder, raw upload, raw sync-upload
 
 Denied commands must use \`plan\` → show user → wait for **approve**.
 
@@ -217,7 +217,7 @@ Config stored in \`~/.cloud189-agent/config.json\`.
 1. \`cloud189_plan rm <remoteId>\` → get dry-run plan.
 2. Show plan.intent + plan.potentialImpact to user.
 3. Wait for explicit "approve".
-4. Run \`cloud189 rm <remoteId>\` yourself and report.
+4. Switch to \`CLOUD189_MODE=user\` and run \`cloud189 rm <remoteId>\` yourself and report.
 
 ## Common Pitfalls
 

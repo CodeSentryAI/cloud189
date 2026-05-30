@@ -1,4 +1,4 @@
-# Codex 开发计划：Agent Safe Storage with Cloud189 Provider
+# Codex 开发计划：CodeSentryAI Cloud189 with Cloud189 Provider
 
 ## 0. 项目目标
 
@@ -109,7 +109,7 @@ TYPE  ID  NAME  SIZE  MODIFIED
 默认配置路径：
 
 ```bash
-~/.agent-safe-storage/config.json
+~/.cloud189-agent/config.json
 ```
 
 或先简单用：
@@ -472,7 +472,7 @@ skills/cloud189-agent-storage/SKILL.md
 ````md
 ---
 name: cloud189-agent-storage
-description: Use Agent Safe Storage with Cloud189 provider to search, download, upload, and safely sync cloud files.
+description: Use CodeSentryAI Cloud189 with Cloud189 provider to search, download, upload, and safely sync cloud files.
 version: 0.1.0
 ---
 
@@ -633,7 +633,7 @@ Cloud189 MCP Server
 建议：
 
 ```text
-Agent Safe Storage
+CodeSentryAI Cloud189
 ```
 
 副标题：

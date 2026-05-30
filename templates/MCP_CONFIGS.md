@@ -5,7 +5,7 @@ Copy the relevant block into your agent's MCP configuration file.
 ## Hermes
 
 ```bash
-hermes mcp add cloud189 --command node --args /ABSOLUTE/PATH/TO/node_modules/@agent-safe-storage/cloud189/src/mcp-server.js
+hermes mcp add cloud189 --command node --args /ABSOLUTE/PATH/TO/node_modules/@codesentryai/cloud189/src/mcp-server.js
 ```
 
 Or add to `~/.hermes/hermes-agent/config.yaml`:
@@ -16,7 +16,7 @@ mcp:
     cloud189:
       command: node
       args:
-        - /ABSOLUTE/PATH/TO/node_modules/@agent-safe-storage/cloud189/src/mcp-server.js
+        - /ABSOLUTE/PATH/TO/node_modules/@codesentryai/cloud189/src/mcp-server.js
 ```
 
 ## Claude Code
@@ -28,7 +28,7 @@ Add to `~/.claude/.mcp.json` (or use `/mcp-add`):
   "mcpServers": {
     "cloud189": {
       "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/node_modules/@agent-safe-storage/cloud189/src/mcp-server.js"]
+      "args": ["/ABSOLUTE/PATH/TO/node_modules/@codesentryai/cloud189/src/mcp-server.js"]
     }
   }
 }
@@ -44,7 +44,7 @@ mcp:
     cloud189:
       command: node
       args:
-        - /ABSOLUTE/PATH/TO/node_modules/@agent-safe-storage/cloud189/src/mcp-server.js
+        - /ABSOLUTE/PATH/TO/node_modules/@codesentryai/cloud189/src/mcp-server.js
 ```
 
 ## Cursor
@@ -56,7 +56,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "cloud189": {
       "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/node_modules/@agent-safe-storage/cloud189/src/mcp-server.js"]
+      "args": ["/ABSOLUTE/PATH/TO/node_modules/@codesentryai/cloud189/src/mcp-server.js"]
     }
   }
 }
@@ -64,7 +64,7 @@ Add to `~/.cursor/mcp.json`:
 
 ## Command-line (no agent)
 
-After `npm install -g @agent-safe-storage/cloud189`:
+After `npm install -g @codesentryai/cloud189`:
 
 ```bash
 cloud189 login-qr

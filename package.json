@@ -1,9 +1,9 @@
 {
-  "name": "@agent-safe-storage/cloud189",
+  "name": "@codesentryai/cloud189",
   "version": "1.0.0",
-  "description": "Agent-safe CLI + MCP server for Tianyi Cloud Disk (天翼云盘). Search, download, upload, sync — without giving agents delete/move/overwrite powers.",
+  "description": "Agent-safe CLI + MCP server for Tianyi Cloud Disk (天翼云盘) by CodeSentryAI. Search, download, upload, sync — without giving agents delete/move/overwrite powers.",
   "license": "MIT",
-  "author": "Agent Safe Storage",
+  "author": "CodeSentryAI",
   "repository": {
     "type": "github",
     "url": "https://github.com/CodeSentryAI/cloud189"

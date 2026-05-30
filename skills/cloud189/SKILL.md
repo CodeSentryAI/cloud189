@@ -2,7 +2,7 @@
 name: cloud189
 description: "Use when the user asks to interact with Tianyi Cloud Disk (天翼云盘) via agent-safe cloud189 CLI/MCP — search, download, upload-safe, sync-upload-safe, plan mode, agent-safe rules, write-root management."
 version: 1.0.0
-author: Agent Safe Storage
+author: CodeSentryAI
 license: MIT
 metadata:
   hermes:
@@ -20,7 +20,7 @@ no direct filesystem. Agents can search, download, upload, and sync but
 
 | Component | Path |
 |---|---|
-| CLI binary | `cloud189` ( global ) or `npx @agent-safe-storage/cloud189` |
+| CLI binary | `cloud189` ( global ) or `npx @codesentryai/cloud189` |
 | MCP server | `node src/mcp-server.js` inside this package |
 | Agent config | `~/.cloud189-agent/config.json` |
 | Skill (this file) | `skills/cloud189/SKILL.md` in this repo |
@@ -114,7 +114,7 @@ configuration blocks.
 
 ## Verification Checklist
 
-- [ ] `npm install -g @agent-safe-storage/cloud189` succeeds
+- [ ] `npm install -g @codesentryai/cloud189` succeeds
 - [ ] `cloud189 status --json` shows `tokenCache: "present"`
 - [ ] `cloud189 agent-status --json` shows `writeRootId` is set
 - [ ] Agent MCP tools appear (11 tools)
