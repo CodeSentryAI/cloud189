@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { createClient } = require('./client');
 const { getConfigDir, getStatePath, getTokenPath } = require('./config');
 const { formatBytes, formatEntries, formatListing, table } = require('./format');
@@ -23,6 +24,7 @@ const {
 } = require('./remote');
 const { pollDownload, pollUpload } = require('./sync');
 const { downloadFile, downloadFolder, uploadPath } = require('./transfer');
+const { guardBeforeUpload, cleanupRedacted } = require('./security/data-leak-guard');
 const {
   assertNoUploadConflict,
   mkdirSafe,
@@ -60,7 +62,7 @@ const COMMANDS = [
   'status'
 ];
 
-const BOOLEAN_OPTIONS = new Set(['json', 'help', 'dir', 'once']);
+const BOOLEAN_OPTIONS = new Set(['json', 'help', 'dir', 'once', 'force-sensitive', 'redact']);
 
 function parseArgs(argv) {
   const positional = [];
@@ -242,9 +244,103 @@ async function main(argv = process.argv.slice(2)) {
 
   const wantsJson = Boolean(parsed.options.json);
   const context = resolveAgentContext(parsed.options);
+  const stdinIsTTY = process.stdin.isTTY === true;
+
+  // -- Data Leak Guard mode selection --
+  let guardMode = 'non-interactive';
+  if (wantsJson) guardMode = 'non-interactive';
+  else if (stdinIsTTY) guardMode = 'interactive';
+  // For MCP usage (argv contains --json), guardMode stays non-interactive.
+
+  const guardOpts = {
+    mode: guardMode,
+    wantsJson,
+    actor: 'cli',
+    onSensitive: parsed.options['on-sensitive'],
+    forceSensitive: Boolean(parsed.options['force-sensitive'])
+  };
+
+  let leakGuardResult = null; // populated before upload commands
 
   try {
     assertCommandAllowed(parsed.command, context);
+
+  // Helper: call Data Leak Guard before upload-type commands
+  async function runGuard(localPath) {
+    const result = await guardBeforeUpload(localPath, guardOpts);
+    if (result.decision === 'deny') {
+      const findings = result.findings || [];
+      const blocked = result.blockedFiles || [];
+      if (wantsJson) {
+        writeJsonOutput({
+          ok: false,
+          blocked: true,
+          reason: 'Sensitive file blocked by Data Leak Guard',
+          file: localPath,
+          findings,
+          blockedFiles: blocked,
+          actions: result.allowedActions,
+          defaultAction: result.recommendedAction
+        });
+      } else {
+        console.error('Data Leak Guard: upload denied.');
+        for (const f of findings.slice(0, 10)) {
+          console.error(`  [${f.severity}] ${path.basename(f.file)} — ${f.type}${f.name ? ' (' + f.name + ')' : ''}`);
+        }
+        process.exitCode = 1;
+      }
+      return null; // signal: blocked
+    }
+    if (result.decision === 'replace') {
+      // redactedMap: originalPath → redactedPath for files that were redacted
+      return { decision: 'replace', redactedMap: result.redactedMap || {}, findings: result.findings };
+    }
+    return { decision: 'approve', findings: result.findings };
+  }
+
+  // Helper: create a temp copy of localPath where specified files are replaced
+  // with redacted versions. Returns the path to use for upload.
+  async function uploadWithRedacted(localPath, redactedMap) {
+    // If only some files are redacted, we need a temp directory with the full
+    // tree where redacted files are swapped in.
+    const fs = require('fs');
+    const os = require('os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-guard-'));
+    const srcResolved = path.resolve(localPath);
+    const stat = fs.statSync(srcResolved);
+
+    if (stat.isFile()) {
+      // Single file: use redacted copy directly
+      return redactedMap[srcResolved] || srcResolved;
+    }
+
+    // Directory tree copy with selective redact
+    const walkFiles = require('./fs-utils').walkFiles;
+    for (const filePath of walkFiles(srcResolved)) {
+      const rel = path.relative(srcResolved, filePath);
+      const dest = path.join(tmpDir, rel);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      const redacted = redactedMap[filePath];
+      if (redacted) {
+        fs.copyFileSync(redacted, dest);
+      } else {
+        fs.copyFileSync(filePath, dest);
+      }
+    }
+    return tmpDir;
+  }
+
+  function cleanupAllRedacted(redactedMap) {
+    if (!redactedMap) return;
+    for (const key of Object.keys(redactedMap)) {
+      cleanupRedacted(redactedMap[key]);
+    }
+    // Also try to clean temp dir
+    try {
+      const tmpDir = path.dirname(Object.values(redactedMap)[0]);
+      fs.rmSync(tmpDir, { force: true, recursive: true });
+    } catch {}
+  }
 
   if (parsed.command === 'login') {
     const username = requireArg(parsed.options.username, '--username');
@@ -378,26 +474,14 @@ async function main(argv = process.argv.slice(2)) {
   if (parsed.command === 'upload') {
     const localPath = requireArg(parsed.args[0], 'localPath');
     const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
-    const client = createClient();
-    const uploaded = await uploadPath(client, localPath, remoteFolderId, {
-      callbacks: {
-        onProgress(progress) {
-          process.stderr.write(`\rupload ${Math.round(progress)}%`);
-        }
-      }
-    });
-    process.stderr.write(uploaded.length ? '\n' : '');
-    printLines(uploaded.map((item) => `uploaded ${item.fileName} ${item.remoteFileId}`));
-    return;
-  }
+    const guardResult = await runGuard(localPath);
+    if (!guardResult) return; // blocked
 
-  if (parsed.command === 'upload-safe') {
-    const localPath = requireArg(parsed.args[0], 'localPath');
-    const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
-    assertWriteRoot(remoteFolderId, context);
     const client = createClient();
-    await assertNoUploadConflict(client, localPath, remoteFolderId);
-    const uploaded = await uploadPath(client, localPath, remoteFolderId, {
+    const uploadSource = guardResult.decision === 'replace'
+      ? await uploadWithRedacted(localPath, guardResult.redactedMap)
+      : localPath;
+    const uploaded = await uploadPath(client, uploadSource, remoteFolderId, {
       callbacks: {
         onProgress(progress) {
           process.stderr.write(`\rupload ${Math.round(progress)}%`);
@@ -406,10 +490,40 @@ async function main(argv = process.argv.slice(2)) {
     });
     process.stderr.write(uploaded.length ? '\n' : '');
     if (wantsJson) {
-      writeJsonOutput({ ok: true, uploaded });
+      writeJsonOutput({ ok: true, uploaded, guard: { decision: guardResult.decision, findings: guardResult.findings } });
       return;
     }
     printLines(uploaded.map((item) => `uploaded ${item.fileName} ${item.remoteFileId}`));
+    if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
+    return;
+  }
+
+  if (parsed.command === 'upload-safe') {
+    const localPath = requireArg(parsed.args[0], 'localPath');
+    const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
+    assertWriteRoot(remoteFolderId, context);
+    const guardResult = await runGuard(localPath);
+    if (!guardResult) return; // blocked
+
+    const client = createClient();
+    const uploadSource = guardResult.decision === 'replace'
+      ? await uploadWithRedacted(localPath, guardResult.redactedMap)
+      : localPath;
+    await assertNoUploadConflict(client, uploadSource, remoteFolderId);
+    const uploaded = await uploadPath(client, uploadSource, remoteFolderId, {
+      callbacks: {
+        onProgress(progress) {
+          process.stderr.write(`\rupload ${Math.round(progress)}%`);
+        }
+      }
+    });
+    process.stderr.write(uploaded.length ? '\n' : '');
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, uploaded, guard: { decision: guardResult.decision, findings: guardResult.findings } });
+      return;
+    }
+    printLines(uploaded.map((item) => `uploaded ${item.fileName} ${item.remoteFileId}`));
+    if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
     return;
   }
 
@@ -441,12 +555,18 @@ async function main(argv = process.argv.slice(2)) {
   if (parsed.command === 'sync-upload') {
     const localDir = requireArg(parsed.args[0], 'localDir');
     const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
+    const guardResult = await runGuard(localDir);
+    if (!guardResult) return; // blocked
     const client = createClient();
-    await pollUpload(client, localDir, remoteFolderId, {
+    const syncSource = guardResult.decision === 'replace'
+      ? await uploadWithRedacted(localDir, guardResult.redactedMap)
+      : localDir;
+    await pollUpload(client, syncSource, remoteFolderId, {
       once: Boolean(parsed.options.once),
       intervalMs: parsed.options.interval
     });
     console.log(parsed.options.once ? 'sync-upload pass complete' : 'sync-upload running');
+    if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
     return;
   }
 
@@ -454,23 +574,30 @@ async function main(argv = process.argv.slice(2)) {
     const localDir = requireArg(parsed.args[0], 'localDir');
     const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
     assertWriteRoot(remoteFolderId, context);
+    const guardResult = await runGuard(localDir);
+    if (!guardResult) return; // blocked
     const client = createClient();
-    const result = await runSafeUploadPass(client, localDir, remoteFolderId);
+    const syncSource = guardResult.decision === 'replace'
+      ? await uploadWithRedacted(localDir, guardResult.redactedMap)
+      : localDir;
+    const result = await runSafeUploadPass(client, syncSource, remoteFolderId);
     if (wantsJson) {
-      writeJsonOutput({ ok: true, ...result });
+      writeJsonOutput({ ok: true, ...result, guard: { decision: guardResult.decision, findings: guardResult.findings } });
       return;
     }
     if (parsed.options.once) {
       console.log(`sync-upload-safe pass complete (${result.uploaded.length} uploaded, ${result.skipped.length} skipped)`);
+      if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
       return;
     }
     const intervalMs = Number(parsed.options.interval || 5000);
     console.log('sync-upload-safe running');
     setInterval(() => {
-      runSafeUploadPass(client, localDir, remoteFolderId).catch((error) => {
+      runSafeUploadPass(client, syncSource, remoteFolderId).catch((error) => {
         console.error(`sync-upload-safe failed: ${error.message}`);
       });
     }, intervalMs);
+    if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
     return;
   }
 
