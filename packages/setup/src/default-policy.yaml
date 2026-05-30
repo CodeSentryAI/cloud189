@@ -1,0 +1,40 @@
+dataLeakGuard:
+  enabled: true
+  defaultNonInteractiveAction: deny
+  defaultMcpAction: deny
+  allowMcpOriginalSensitiveUpload: false
+  allowPlainSecretLogs: false
+
+  scan:
+    maxTextFileBytes: 10485760
+
+  forbiddenPaths:
+    - "~/.ssh/**"
+    - "~/.gnupg/**"
+    - "~/.aws/**"
+    - "~/.kube/**"
+    - "~/.hermes/.env"
+    - "~/.claude/**"
+    - "**/.env"
+    - "**/.env.*"
+    - "**/*.pem"
+    - "**/*.key"
+    - "**/id_rsa"
+    - "**/id_ed25519"
+    - "**/secrets/**"
+    - "**/credentials/**"
+    - "**/service-account*.json"
+
+  secretPatterns:
+    - name: env_api_key
+      severity: high
+      pattern: '\b[A-Z0-9_]*(API_KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_]*\s*=\s*["\x27]?[^"\x27\s]{8,}'
+    - name: bearer_token
+      severity: high
+      pattern: '\bBearer\s+[A-Za-z0-9._~+/\\-]{20,}'
+    - name: private_key_block
+      severity: critical
+      pattern: '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
+    - name: aws_access_key
+      severity: critical
+      pattern: 'AKIA[0-9A-Z]{16}'

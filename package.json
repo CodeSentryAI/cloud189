@@ -1,7 +1,7 @@
 {
   "name": "cloud189-monorepo",
   "private": true,
-  "description": "Cloud189 Agent Safe Storage — one repo, two packages.",
+  "description": "Cloud189 Agent Storage — free cold storage for AI agent artifacts. One-command setup. QR login. Data Leak Guard.",
   "license": "MIT",
   "author": "CodeSentryAI",
   "repository": {
