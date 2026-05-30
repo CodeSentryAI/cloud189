@@ -35,7 +35,6 @@ function pkgRoot() {
   // Works after `npm install -g` because require.resolve follows the real path
   try {
     const entry = require.resolve(PKG_NAME);
-    // node_modules/@agent-safe-storage/cloud189/install.js → go up 2 levels
     let dir = path.dirname(entry);
     for (let i = 0; i < 3; i++) dir = path.dirname(dir);
     return dir;
