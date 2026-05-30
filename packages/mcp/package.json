@@ -26,7 +26,8 @@
     "cloud189-mcp": "src/mcp-server.js"
   },
   "files": [
-    "src/"
+    "src/",
+    "templates/"
   ],
   "dependencies": {
     "@codesentryai/cloud189": "^1.0.0",

@@ -1,51 +1,18 @@
 {
-  "name": "@codesentryai/cloud189",
-  "version": "1.0.0",
-  "description": "Agent-safe CLI + MCP server for Tianyi Cloud Disk (天翼云盘) by CodeSentryAI. Search, download, upload, sync — without giving agents delete/move/overwrite powers.",
+  "name": "cloud189-monorepo",
+  "private": true,
+  "description": "Cloud189 Agent Safe Storage — one repo, two packages.",
   "license": "MIT",
   "author": "CodeSentryAI",
   "repository": {
     "type": "github",
     "url": "https://github.com/CodeSentryAI/cloud189"
   },
-  "keywords": [
-    "cloud189",
-    "tianyi",
-    "cloud-storage",
-    "agent-safe",
-    "mcp",
-    "ai-agent",
-    "hermes",
-    "claude-code",
-    "openclaw"
-  ],
-  "engines": {
-    "node": ">=18"
-  },
-  "bin": {
-    "cloud189": "bin/cloud189.js"
-  },
-  "main": "src/cli.js",
-  "files": [
-    "bin/",
-    "src/",
-    "skills/",
-    "templates/",
-    "install.js",
-    "README.md",
-    "LICENSE"
+  "workspaces": [
+    "packages/*"
   ],
   "scripts": {
-    "test": "node --test",
-    "mcp": "node src/mcp-server.js",
-    "postinstall": "node install.js"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "cloud189-sdk": "^1.0.9",
-    "zod": "^3.25.0"
-  },
-  "publishConfig": {
-    "access": "public"
+    "test": "npm -w packages/cli test",
+    "test:all": "npm --workspaces test"
   }
 }
