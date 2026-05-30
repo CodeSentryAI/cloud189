@@ -14,9 +14,14 @@ const SAFE_COMMANDS = new Set([
   'tree',
   'search',
   'download',
+  'login',
+  'login-qr',
+  'login-sso',
+  'mkdir',
   'mkdir-safe',
   'upload-safe',
   'sync-upload-safe',
+  'sync-download',
   'plan',
   'init-agent',
   'agent-status'
@@ -27,8 +32,7 @@ const DANGEROUS_COMMANDS = new Set([
   'mv',
   'rename-folder',
   'upload',
-  'sync-upload',
-  'sync-download'
+  'sync-upload'
 ]);
 
 function defaultAgentConfig() {
@@ -112,8 +116,15 @@ function assertCommandAllowed(command, context) {
     return;
   }
 
-  if (!SAFE_COMMANDS.has(command) || DANGEROUS_COMMANDS.has(command)) {
+  if (DANGEROUS_COMMANDS.has(command)) {
     throw deniedError(command);
+  }
+
+  if (!SAFE_COMMANDS.has(command)) {
+    const error = new Error(`${command} is not allowed in agent-safe mode.`);
+    error.code = 'DENIED_AGENT_SAFE';
+    error.suggestion = `This command is not recognized as safe. Contact the administrator to allow it.`;
+    throw error;
   }
 }
 

@@ -41,6 +41,7 @@ const COMMANDS = [
   'list [remoteFolderId] (default: -11 personal root; 0: SyncDisk)',
   'roots',
   'mkdir <remoteParentId> <name>',
+  'mkdir-safe <remoteParentId> <name>',
   'rm <remoteId> [--dir] [--name <name>] [--parent <parentId>]',
   'mv <remoteId> <targetFolderId> [--dir] [--name <name>] [--parent <parentId>]',
   'rename-folder <remoteFolderId> <newName>',
@@ -59,6 +60,8 @@ const COMMANDS = [
   'status'
 ];
 
+const BOOLEAN_OPTIONS = new Set(['json', 'help', 'dir', 'once']);
+
 function parseArgs(argv) {
   const positional = [];
   const options = {};
@@ -71,12 +74,16 @@ function parseArgs(argv) {
     }
 
     const key = arg.slice(2);
-    const next = argv[index + 1];
-    if (!next || next.startsWith('--')) {
+    if (BOOLEAN_OPTIONS.has(key)) {
       options[key] = true;
     } else {
-      options[key] = next;
-      index += 1;
+      const next = argv[index + 1];
+      if (!next || next.startsWith('--')) {
+        options[key] = true;
+      } else {
+        options[key] = next;
+        index += 1;
+      }
     }
   }
 

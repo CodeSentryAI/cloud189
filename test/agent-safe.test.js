@@ -15,7 +15,40 @@ test('agent-safe mode denies dangerous commands', () => {
   assert.throws(() => assertCommandAllowed('rm', context), {
     code: 'DENIED_AGENT_SAFE'
   });
+  assert.throws(() => assertCommandAllowed('mv', context), {
+    code: 'DENIED_AGENT_SAFE'
+  });
+  assert.throws(() => assertCommandAllowed('upload', context), {
+    code: 'DENIED_AGENT_SAFE'
+  });
+  assert.throws(() => assertCommandAllowed('sync-upload', context), {
+    code: 'DENIED_AGENT_SAFE'
+  });
   assert.doesNotThrow(() => assertCommandAllowed('upload-safe', context));
+});
+
+test('agent-safe mode allows login commands', () => {
+  const context = resolveAgentContext({ mode: 'agent-safe' }, {});
+
+  assert.doesNotThrow(() => assertCommandAllowed('login', context));
+  assert.doesNotThrow(() => assertCommandAllowed('login-qr', context));
+  assert.doesNotThrow(() => assertCommandAllowed('login-sso', context));
+});
+
+test('agent-safe mode allows mkdir and sync-download', () => {
+  const context = resolveAgentContext({ mode: 'agent-safe' }, {});
+
+  assert.doesNotThrow(() => assertCommandAllowed('mkdir', context));
+  assert.doesNotThrow(() => assertCommandAllowed('mkdir-safe', context));
+  assert.doesNotThrow(() => assertCommandAllowed('sync-download', context));
+});
+
+test('agent-safe mode denies unknown commands', () => {
+  const context = resolveAgentContext({ mode: 'agent-safe' }, {});
+
+  assert.throws(() => assertCommandAllowed('destroy-everything', context), {
+    code: 'DENIED_AGENT_SAFE'
+  });
 });
 
 test('agent context prefers CLI options over environment and config', () => {

@@ -43,16 +43,17 @@ no direct filesystem. Agents can search, download, upload, and sync but
 
 ## Agent-Safe Mode Rules
 
-**Allowed:** status, quota, roots, list, tree, search, download, mkdir-safe,
-upload-safe, sync-upload-safe, plan, init-agent, agent-status
+**Allowed:** login, login-qr, login-sso, status, quota, roots, list, tree, search,
+download, mkdir, mkdir-safe, upload-safe, sync-upload-safe, sync-download, plan,
+init-agent, agent-status
 
-**Denied:** rm, mv, rename-folder, raw upload, raw sync-upload, sync-download
+**Denied:** rm, mv, rename-folder, raw upload, raw sync-upload
 
 If a denied operation is requested:
-1. Use `cloud189_plan` to generate a dry-run plan.
+1. Use `cloud189 plan` to generate a dry-run plan.
 2. Show `intent` + `potentialImpact` to the user.
 3. Wait for explicit **approve**.
-4. If approved, run the raw CLI yourself and report.
+4. If approved, switch to `CLOUD189_MODE=user` and run the raw CLI yourself and report.
 
 ## Write Root
 
