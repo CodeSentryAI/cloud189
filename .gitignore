@@ -39,3 +39,4 @@ Thumbs.db
 
 # Old root-level binary (pre-monorepo)
 cloud189
+.npmrc
