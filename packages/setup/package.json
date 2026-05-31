@@ -38,9 +38,12 @@
   "main": "bin/cloud189-setup.js",
   "files": [
     "bin/",
-    "src/",
+    "src/default-policy.json",
     "README.md"
   ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "dependencies": {},
   "preferGlobal": true
 }

@@ -1,0 +1,62 @@
+{
+  "enabled": true,
+  "defaultInteractiveAction": "ask",
+  "defaultNonInteractiveAction": "deny",
+  "defaultMcpAction": "deny",
+  "allowMcpOriginalSensitiveUpload": false,
+  "allowPlainSecretLogs": false,
+  "scan": {
+    "maxTextFileBytes": 10485760,
+    "blockArchives": true,
+    "blockUnsafeSymlinks": true
+  },
+  "replace": {
+    "enabled": true,
+    "replacement": "***"
+  },
+  "forbiddenPaths": [
+    "~/.ssh/**",
+    "~/.gnupg/**",
+    "~/.aws/**",
+    "~/.azure/**",
+    "~/.config/gcloud/**",
+    "~/.kube/**",
+    "~/.docker/config.json",
+    "~/.hermes/.env",
+    "~/.hermes/**/*.env",
+    "~/.claude/settings.json",
+    "~/.claude/**/*.json",
+    "~/.config/claude/**",
+    "**/.env",
+    "**/.env.*",
+    "**/*.pem",
+    "**/*.key",
+    "**/*.p12",
+    "**/*.pfx",
+    "**/id_rsa",
+    "**/id_ed25519",
+    "**/known_hosts",
+    "**/authorized_keys",
+    "**/secrets/**",
+    "**/secret/**",
+    "**/credentials/**",
+    "**/*credential*",
+    "**/*secret*",
+    "**/*token*"
+  ],
+  "suspiciousPaths": [
+    "**/.npmrc",
+    "**/.pypirc",
+    "**/.netrc",
+    "**/config.json",
+    "**/settings.json",
+    "**/credentials.json",
+    "**/service-account*.json",
+    "**/wallet*.json",
+    "**/keystore/**",
+    "**/mnemonic*",
+    "**/seed*",
+    "**/private*"
+  ],
+  "allowPaths": []
+}

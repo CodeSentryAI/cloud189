@@ -10,7 +10,7 @@
  *   1. Install cloud189 CLI
  *   2. Install cloud189-mcp
  *   3. Run cloud189 login-qr (shows QR code)
- *   4. Create /AgentStorage/{memory,reports,logs,backups} folders
+ *   4. Create /AgentStorage/{memory,work-results,reports,logs,backups} folders
  *   5. Enable Data Leak Guard (default deny policy)
  *   6. Print MCP config for Claude Code / Cursor / Hermes
  *   7. Test upload
@@ -23,6 +23,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+
+const SETUP_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
@@ -58,6 +60,19 @@ function runJson(cmd, timeoutMs = 30000) {
   }
 }
 
+function installPublishedPackage(name) {
+  const versioned = `${name}@${SETUP_VERSION}`;
+  if (runVisible(`npm install -g ${versioned}`, 120000)) {
+    return versioned;
+  }
+  if (runVisible(`npm install -g ${name}`, 120000)) {
+    return name;
+  }
+  fail(`Install failed for ${name}.`);
+  info(`Expected publish order: first publish @codesentryai/cloud189@${SETUP_VERSION}, then @codesentryai/cloud189-mcp@${SETUP_VERSION}, then @codesentryai/cloud189-setup@${SETUP_VERSION}.`);
+  process.exit(1);
+}
+
 function readLine(prompt) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
@@ -76,19 +91,13 @@ console.log(`\n${BOLD}${CYAN}
 
   // ── Step 1: Install CLI ────────────────────────────────────────────
   step(1, 'Install cloud189 CLI');
-  if (!runVisible('npm install -g @codesentryai/cloud189', 120000)) {
-    fail('Install failed. Try: npm install -g @codesentryai/cloud189');
-    process.exit(1);
-  }
-  ok('cloud189 CLI installed');
+  const installedCli = installPublishedPackage('@codesentryai/cloud189');
+  ok(`cloud189 CLI installed (${installedCli})`);
 
   // ── Step 2: Install MCP ────────────────────────────────────────────
   step(2, 'Install cloud189-mcp');
-  if (!runVisible('npm install -g @codesentryai/cloud189-mcp', 120000)) {
-    fail('Install failed. Try: npm install -g @codesentryai/cloud189-mcp');
-    process.exit(1);
-  }
-  ok('cloud189-mcp installed');
+  const installedMcp = installPublishedPackage('@codesentryai/cloud189-mcp');
+  ok(`cloud189-mcp installed (${installedMcp})`);
 
   // ── Step 3: Login ──────────────────────────────────────────────────
   step(3, 'Login to Tianyi Cloud 189');
@@ -129,7 +138,7 @@ console.log(`\n${BOLD}${CYAN}
     } catch {}
   }
 
-  const subfolders = ['memory','reports','logs','backups'];
+  const subfolders = ['memory','work-results','reports','logs','backups'];
   if (agentStorageId) {
     for (const name of subfolders) {
       const r = runJson(`cloud189 mkdir ${agentStorageId} ${name} --json`);
@@ -145,8 +154,8 @@ console.log(`\n${BOLD}${CYAN}
 
   const configDir  = path.join(os.homedir(), '.config', 'cloud189');
   const policyDir  = path.join(configDir, 'security');
-  const policyFile = path.join(policyDir, 'policy.yaml');
-  const defaultPolicy = path.join(__dirname, '..', 'src', 'default-policy.yaml');
+  const policyFile = path.join(policyDir, 'policy.json');
+  const defaultPolicy = path.join(__dirname, '..', 'src', 'default-policy.json');
 
   try {
     fs.mkdirSync(policyDir, { recursive: true, mode: 0o700 });
@@ -155,7 +164,14 @@ console.log(`\n${BOLD}${CYAN}
     } else {
       // Fallback: write minimal deny policy inline
       fs.writeFileSync(policyFile,
-        'dataLeakGuard:\n  enabled: true\n  defaultNonInteractiveAction: deny\n  defaultMcpAction: deny\n  allowMcpOriginalSensitiveUpload: false\n',
+        JSON.stringify({
+          enabled: true,
+          defaultInteractiveAction: 'ask',
+          defaultNonInteractiveAction: 'deny',
+          defaultMcpAction: 'deny',
+          allowMcpOriginalSensitiveUpload: false,
+          allowPlainSecretLogs: false
+        }, null, 2) + '\n',
         { mode: 0o600 }
       );
     }
@@ -173,7 +189,7 @@ console.log(`\n${BOLD}${CYAN}
   "mcpServers": {
     "cloud189": {
       "command": "npx",
-      "args": ["@codesentryai/cloud189-mcp"]
+      "args": ["-y", "@codesentryai/cloud189-mcp"]
     }
   }
 }`;
@@ -221,6 +237,7 @@ console.log(`\n${BOLD}${CYAN}
 ║                                                                  ║
 ║  Storage:                                                        ║
 ║    /AgentStorage/memory    — agent memory & session summaries     ║
+║    /AgentStorage/work-results — generated work artifacts          ║
 ║    /AgentStorage/reports   — generated reports & analysis        ║
 ║    /AgentStorage/logs      — task logs & audit trails            ║
 ║    /AgentStorage/backups   — project backups & snapshots         ║

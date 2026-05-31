@@ -122,14 +122,18 @@ function loadPolicy(userPolicyFile) {
     } catch {}
   }
 
-  // Check default policy file
-  const defaultPolicyPath = path.join(
-    process.env.CLOUD189_CLI_HOME || path.join(os.homedir(), '.config', 'cloud189'),
-    'security-policy.yaml'
-  );
-  const defaultPolicyPathJson = defaultPolicyPath.replace(/\.yaml$/, '.json');
+  // Check canonical default policy file
+  const configRoot = process.env.CLOUD189_CLI_HOME || path.join(os.homedir(), '.config', 'cloud189');
+  const defaultPolicyPath = path.join(configRoot, 'security', 'policy.json');
   try {
-    const user = JSON.parse(fs.readFileSync(defaultPolicyPathJson, 'utf8'));
+    const user = JSON.parse(fs.readFileSync(defaultPolicyPath, 'utf8'));
+    return deepMerge(defaultPolicy, user);
+  } catch {}
+
+  // Backward-compatible legacy path
+  const legacyPolicyPath = path.join(configRoot, 'security-policy.json');
+  try {
+    const user = JSON.parse(fs.readFileSync(legacyPolicyPath, 'utf8'));
     return deepMerge(defaultPolicy, user);
   } catch {}
 

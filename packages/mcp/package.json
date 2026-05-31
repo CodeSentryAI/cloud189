@@ -39,6 +39,9 @@
     "templates/",
     "README.md"
   ],
+  "scripts": {
+    "test": "node -e \"require('./src/mcp-server.js'); console.log('mcp-load-ok')\""
+  },
   "dependencies": {},
   "peerDependencies": {
     "@codesentryai/cloud189": "^1.0.0"

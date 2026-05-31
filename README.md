@@ -80,7 +80,7 @@ Cloud189 Agent Storage is designed for **agent work artifacts**: reports, logs, 
 
 **For sensitive data: encrypt before upload.**
 
-The Data Leak Guard scans all uploads and blocks files containing secrets by default. Configure policy at `~/.config/cloud189/security/policy.yaml`.
+The Data Leak Guard scans all uploads and blocks files containing secrets by default. Configure policy at `~/.config/cloud189/security/policy.json`.
 
 ## MCP Configuration
 
@@ -151,6 +151,10 @@ cloud189 logout                                # delete local session
 > Install: `npm install -g @codesentryai/cloud189` + `npm install -g @codesentryai/cloud189-mcp`
 > Login: `cloud189 login-qr`
 > Agent docs: https://github.com/CodeSentryAI/cloud189/blob/main/llms.txt
+
+## Disclaimer
+
+Personal project. Not affiliated with or endorsed by Tianyi Cloud 189 / 天翼云盘 or any related official service. Please use at your own discretion.
 
 ## License
 

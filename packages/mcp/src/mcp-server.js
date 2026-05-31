@@ -6,6 +6,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const z = require('zod');
 
+const PACKAGE_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
 const PERSONAL_ROOT_FOLDER_ID = '-11';
 
 // --- helpers ----------------------------------------------------------------
@@ -48,7 +49,7 @@ function errorResult(error) {
 const server = new McpServer(
   {
     name: 'cloud189',
-    version: require('./package.json').version
+    version: PACKAGE_VERSION
   },
   {
     capabilities: { tools: {} }

@@ -1,14 +1,16 @@
-# Cloud189 Agent Safe Storage
+# @codesentryai/cloud189
 
-> **Command-based safe cloud storage for AI agents.**
-> Search, download, upload, sync — without giving agents delete / move / overwrite powers.
+> **CLI for Cloud189 Agent Storage — safe cloud storage for humans and AI agent workflows.**
+
+Login with QR, upload/download files, search remote content, and manage agent-safe storage on Tianyi Cloud 189 / 天翼云盘.
 
 ## Packages
 
 | Package | Install | What it provides |
 |---|---|---|
 | `@codesentryai/cloud189` | `npm install -g @codesentryai/cloud189` | CLI: `cloud189` binary + agent skill |
-| `@codesentryai/cloud189-mcp` | `npm install -g @codesentryai/cloud189-mcp` | MCP server: `cloud189-mcp` binary (11 tools) |
+| `@codesentryai/cloud189-mcp` | `npm install -g @codesentryai/cloud189-mcp` | MCP server: `cloud189-mcp` binary |
+| `@codesentryai/cloud189-setup` | `npx @codesentryai/cloud189-setup` | One-command installer |
 
 Source code lives in one repo: [CodeSentryAI/cloud189](https://github.com/CodeSentryAI/cloud189)
 
@@ -24,10 +26,7 @@ npm install -g @codesentryai/cloud189-mcp
 # 3. Login via QR code
 cloud189 login-qr
 
-# 4. Initialize agent working directory
-cloud189 init-agent hermes
-
-# 5. Verify
+# 4. Verify
 cloud189 status --json
 ```
 
@@ -100,24 +99,32 @@ See [`templates/MCP_CONFIGS.md`](templates/MCP_CONFIGS.md) for full examples.
 
 Denied operations return `DENIED_AGENT_SAFE`. Use `cloud189 plan <cmd>` instead.
 
-## Write Root
+## Agent Storage Layout
 
-All safe uploads target a configured agent write root (default: `/Agents/hermes`).
-Config stored in `~/.cloud189-agent/config.json`.
+Typical layout:
+
+```text
+/AgentStorage/
+  memory/
+  work-results/
+  reports/
+  logs/
+  backups/
+```
 
 ## Monorepo Layout
 
-```
+```text
 cloud189/
 ├── packages/
-│   ├── cli/       → @codesentryai/cloud189      (CLI binary + skill)
-│   └── mcp/       → @codesentryai/cloud189-mcp   (MCP server binary)
+│   ├── cli/       → @codesentryai/cloud189
+│   ├── mcp/       → @codesentryai/cloud189-mcp
+│   └── setup/     → @codesentryai/cloud189-setup
 ├── package.json   (root, private)
 └── README.md
 ```
 
-MCP server calls `cloud189 --json <command>` internally. Shared logic
-stays in the CLI; no `core` package needed until duplication becomes painful.
+MCP server calls `cloud189 --json <command>` internally. Shared logic stays in the CLI; no `core` package needed until duplication becomes painful.
 
 ## License
 
@@ -125,5 +132,4 @@ MIT — [CodeSentryAI](https://github.com/CodeSentryAI)
 
 ## Disclaimer
 
-Not affiliated with, endorsed by, or sponsored by China Telecom / Cloud189.
-Cloud189 is the currently supported storage provider backend.
+Personal project. Not affiliated with or endorsed by Tianyi Cloud 189 / 天翼云盘 or any related official service.

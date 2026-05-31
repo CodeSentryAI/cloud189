@@ -38,14 +38,16 @@
     "bin/",
     "src/",
     "skills/",
-    "docs/",
+    "docs/**/*.md",
+    "docs/media/*.txt",
+    "docs/media/*.typescript",
     "templates/",
     "install.js",
     "llms.txt",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "postinstall": "node install.js || true"
   },
   "dependencies": {

@@ -76,14 +76,16 @@ A pre-flight scan runs before every upload command. Agents can store artifacts, 
 
 ### Policy File
 
-Configure at `~/.config/cloud189/security/policy.yaml`:
+Configure at `~/.config/cloud189/security/policy.json`:
 
-```yaml
-dataLeakGuard:
-  enabled: true
-  defaultNonInteractiveAction: deny
-  defaultMcpAction: deny
-  allowMcpOriginalSensitiveUpload: false
+```json
+{
+  "enabled": true,
+  "defaultInteractiveAction": "ask",
+  "defaultNonInteractiveAction": "deny",
+  "defaultMcpAction": "deny",
+  "allowMcpOriginalSensitiveUpload": false
+}
 ```
 
 ### Agent-Safe Default
