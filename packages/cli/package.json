@@ -1,6 +1,6 @@
 {
   "name": "@codesentryai/cloud189",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cloud189 Agent Storage — secure, reliable, extensible, free cloud storage for AI agents, powered by Tianyi Cloud 189 / 天翼云盘. CLI for humans: login, upload, download, sync, status.",
   "license": "MIT",
   "author": "CodeSentryAI",
