@@ -21,11 +21,14 @@ test('agent-safe mode denies dangerous commands', () => {
   assert.throws(() => assertCommandAllowed('rename-folder', context), {
     code: 'DENIED_AGENT_SAFE'
   });
-  // upload and sync-upload are now safe (protected by Data Leak Guard)
-  assert.doesNotThrow(() => assertCommandAllowed('upload', context));
   assert.doesNotThrow(() => assertCommandAllowed('upload-safe', context));
-  assert.doesNotThrow(() => assertCommandAllowed('sync-upload', context));
   assert.doesNotThrow(() => assertCommandAllowed('sync-upload-safe', context));
+  assert.throws(() => assertCommandAllowed('upload', context), {
+    code: 'DENIED_AGENT_SAFE'
+  });
+  assert.throws(() => assertCommandAllowed('sync-upload', context), {
+    code: 'DENIED_AGENT_SAFE'
+  });
 });
 
 test('agent-safe mode allows login commands', () => {
@@ -42,6 +45,7 @@ test('agent-safe mode allows mkdir and sync-download', () => {
   assert.doesNotThrow(() => assertCommandAllowed('mkdir', context));
   assert.doesNotThrow(() => assertCommandAllowed('mkdir-safe', context));
   assert.doesNotThrow(() => assertCommandAllowed('sync-download', context));
+  assert.doesNotThrow(() => assertCommandAllowed('transfer-status', context));
 });
 
 test('agent-safe mode denies unknown commands', () => {

@@ -49,7 +49,10 @@ grep -R "accessToken\|refreshToken\|sessionKey" ~/.config/cloud189/
 
 ## Data Leak Guard
 
-A pre-flight scan runs before every upload command. Agents can store artifacts, but cannot silently upload secrets.
+Data Leak Guard protects the safe / agent-facing upload surfaces (`upload-safe`,
+`sync-upload-safe`, and MCP safe upload tools). Raw human CLI commands such as
+`upload`, `sync`, `upload-large-*`, `sync-large-*`, and legacy `sync-upload` do
+not run DLG by default; they are explicit, user-directed transfers.
 
 ### What It Blocks (Forbidden Paths)
 
@@ -117,8 +120,9 @@ No raw secret values are ever written to the audit log.
 | `status`, `agent-status` | Yes |
 | `list`, `tree`, `search` | Yes |
 | `download` | Yes |
-| `upload`, `upload-safe` | Yes (Data Leak Guard protects) |
-| `sync-upload`, `sync-upload-safe` | Yes (Data Leak Guard protects) |
+| `upload-safe`, `sync-upload-safe` | Yes (Data Leak Guard protects) |
+| `transfer-status` | Yes (read-only) |
+| Raw `upload`, `sync`, `upload-large-*`, `sync-large-*`, `sync-upload` | Human CLI only; no DLG by default |
 | `mkdir`, `mkdir-safe` | Yes |
 | `plan` | Yes (dry-run only) |
 | `rm` | **No** |

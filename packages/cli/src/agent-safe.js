@@ -20,11 +20,10 @@ const SAFE_COMMANDS = new Set([
   'logout',
   'mkdir',
   'mkdir-safe',
-  'upload',
   'upload-safe',
-  'sync-upload',
   'sync-upload-safe',
   'sync-download',
+  'transfer-status',
   'plan',
   'init-agent',
   'agent-status'

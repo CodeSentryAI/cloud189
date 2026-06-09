@@ -147,6 +147,30 @@ function remoteTaskOptions(options) {
   };
 }
 
+function assertExplicitLargeCommandLocalType(command, localPath) {
+  if (!['upload-large-file', 'upload-large-dir', 'sync-large-file', 'sync-large-dir'].includes(command)) {
+    return fs.statSync(localPath);
+  }
+
+  const stat = fs.statSync(localPath);
+  const expectsFile = command.endsWith('-file');
+  const expectsDir = command.endsWith('-dir');
+
+  if (expectsFile && !stat.isFile()) {
+    const error = new Error(`${command} requires a file. Use ${command.replace('-file', '-dir')} for directories.`);
+    error.code = 'INVALID_LOCAL_PATH_TYPE';
+    throw error;
+  }
+
+  if (expectsDir && !stat.isDirectory()) {
+    const error = new Error(`${command} requires a directory. Use ${command.replace('-dir', '-file')} for files.`);
+    error.code = 'INVALID_LOCAL_PATH_TYPE';
+    throw error;
+  }
+
+  return stat;
+}
+
 function parseDepth(value) {
   if (value === undefined) {
     return Infinity;
@@ -513,6 +537,7 @@ async function main(argv = process.argv.slice(2)) {
   if (parsed.command === 'upload' || parsed.command === 'upload-large-file' || parsed.command === 'upload-large-dir') {
     const localPath = requireArg(parsed.args[0], 'localPath');
     const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
+    assertExplicitLargeCommandLocalType(parsed.command, localPath);
     const explicitLarge = parsed.command === 'upload-large-file' || parsed.command === 'upload-large-dir';
     if (parsed.command === 'upload') {
       simpleUploadGuard(localPath);
@@ -594,11 +619,11 @@ async function main(argv = process.argv.slice(2)) {
   if (parsed.command === 'sync' || parsed.command === 'sync-large-file' || parsed.command === 'sync-large-dir') {
     const localPath = requireArg(parsed.args[0], 'localPath');
     const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
+    const stat = assertExplicitLargeCommandLocalType(parsed.command, localPath);
     if (parsed.command === 'sync') {
       simpleSyncGuard(localPath);
     }
     const client = createClient();
-    const stat = fs.statSync(localPath);
     if (stat.isFile()) {
       const uploaded = await uploadPath(client, localPath, remoteFolderId, {
         forceLargeFileSplit: parsed.command === 'sync-large-file',
@@ -793,6 +818,7 @@ async function main(argv = process.argv.slice(2)) {
 }
 
 module.exports = {
+  assertExplicitLargeCommandLocalType,
   main,
   parseArgs,
   usage

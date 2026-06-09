@@ -16,6 +16,9 @@ npm install -g @codesentryai/cloud189-mcp
 - `cloud189-mcp` MCP server binary
 - Cloud storage tools for list, search, download, upload-safe, mkdir-safe, sync-upload-safe, quota, and planning dangerous ops
 - Agent-safe behavior: no delete/overwrite by default
+- Safe tools only: MCP intentionally does **not** expose raw human large-object commands (`upload-large-*`, `sync-large-*`, or legacy `sync-upload`)
+
+Human large-object transfers are CLI-only for now. Use `cloud189 transfer-status <remoteContainerId>` from the CLI to inspect resumable `.cloud189-split/` and `.cloud189-dir/` containers; MCP job/status support is future work.
 
 ## Example MCP config
 

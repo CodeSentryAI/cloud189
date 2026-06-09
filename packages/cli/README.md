@@ -72,6 +72,8 @@ cloud189 transfer-status <remoteContainerId> --json
 
 `transfer-status` reads `.cloud189-split-*` or `.cloud189-dir-*` manifest/progress files and reports completion percent, uploaded chunks/bundles, bytes, and whether the transfer is resumable.
 
+`sync-upload` is kept as a legacy/raw directory sync command. New human workflows should prefer `sync` for small objects and `sync-large-dir` for large directories.
+
 ### Other CLI commands
 
 ```bash

@@ -51,7 +51,7 @@ No API keys. No OAuth. Just scan and go.
 | **Cost** | Free consumer cloud disk | Paid or commercial |
 | **Login** | QR scan — no API keys | OAuth, API keys, service accounts |
 | **Install** | `npx @codesentryai/cloud189-setup` | Manual config |
-| **Secret protection** | Data Leak Guard (blocks .env, keys) | None built-in |
+| **Secret protection** | Data Leak Guard on safe/agent upload surfaces (blocks .env, keys) | None built-in |
 | **Agent safety** | No delete/overwrite by default | Full CRUD unless restricted |
 | **Session** | AES-256-GCM encrypted | Varies |
 | **Protocol** | MCP + CLI + Skills | CLI only or generic MCP |
@@ -80,7 +80,7 @@ Cloud189 Agent Storage is designed for **agent work artifacts**: reports, logs, 
 
 **For sensitive data: encrypt before upload.**
 
-The Data Leak Guard scans all uploads and blocks files containing secrets by default. Configure policy at `~/.config/cloud189/security/policy.json`.
+The Data Leak Guard protects `upload-safe`, `sync-upload-safe`, and MCP safe upload tools. Raw human CLI transfers (`upload`, `sync`, `upload-large-*`, `sync-large-*`, and legacy `sync-upload`) are explicit user-directed commands and do not run DLG by default. Configure policy at `~/.config/cloud189/security/policy.json`.
 
 ## MCP Configuration
 
@@ -120,7 +120,15 @@ See [docs/mcp-config.md](docs/mcp-config.md) for all platforms.
 cloud189 login-qr                              # scan QR with 天翼云盘 app
 cloud189 status --json                         # storage & session info
 cloud189 list -11 --json                       # list root files
-cloud189 upload-safe <file> <folderId> --json  # upload (no overwrite)
+cloud189 upload <smallFileOrSmallDir> <folderId>        # human small upload
+cloud189 upload-large-file <file> <folderId>            # resumable .cloud189-split/
+cloud189 upload-large-dir <dir> <folderId>              # resumable .cloud189-dir/
+cloud189 sync <smallFileOrSmallDir> <folderId>          # human small sync
+cloud189 sync-large-file <file> <folderId>              # resumable large-file sync
+cloud189 sync-large-dir <dir> <folderId>                # resumable large-dir sync
+cloud189 transfer-status <containerId> --json           # inspect resumable container
+cloud189 upload-safe <file> <writeRootId> --json        # agent-safe upload (no overwrite)
+cloud189 sync-upload-safe <dir> <writeRootId> --once    # agent-safe one-shot sync
 cloud189 download <fileId> <path> --json       # download
 cloud189 mkdir -11 MyFolder --json             # create folder
 cloud189 search "keyword" --json               # search files

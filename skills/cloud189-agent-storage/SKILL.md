@@ -46,14 +46,14 @@ Official Tianyi Cloud 189 website: https://cloud.189.cn/
 └── backups/        — project backups, snapshots
 ```
 
-## Common Commands (always use --json)
+## Common Commands (prefer --json for automation)
 
 ```bash
 cloud189 login-qr                                   # QR login
 cloud189 status --json                              # session & storage info
 cloud189 list <folderId> --json                     # list files
-cloud189 upload <localPath> <folderId> --json       # upload file
-cloud189 upload-safe <localPath> <folderId> --json  # upload (no overwrite)
+cloud189 upload-safe <localPath> <writeRootId> --json        # agent-safe upload, no overwrite, DLG protected
+cloud189 sync-upload-safe <localDir> <writeRootId> --once --json  # agent-safe sync, no delete, DLG protected
 cloud189 download <fileId> <localPath> --json       # download file
 cloud189 mkdir <parentId> <name> --json             # create folder
 cloud189 search <keyword> --json                    # search
@@ -61,11 +61,27 @@ cloud189 agent-status --json                        # agent config & safety
 cloud189 logout                                     # delete local session
 ```
 
+Human raw CLI commands are separate and explicit:
+
+```bash
+cloud189 upload <smallFileOrSmallDir> <folderId>
+cloud189 sync <smallFileOrSmallDir> <folderId>
+cloud189 upload-large-file <file> <folderId>
+cloud189 upload-large-dir <dir> <folderId>
+cloud189 sync-large-file <file> <folderId>
+cloud189 sync-large-dir <dir> <folderId>
+cloud189 transfer-status <containerId> [--json]
+```
+
+`upload` / `sync` are for small objects only (<= 2 GiB; directories also <= 1000 files). Large objects must use the explicit large-object commands. Raw human CLI transfers do not run Data Leak Guard by default.
+
 ## MCP Server
 
 Binary: `cloud189-mcp`
 
-MCP tools: `cloud189_login_qr`, `cloud189_list`, `cloud189_search`, `cloud189_upload`, `cloud189_download`, `cloud189_mkdir`, `cloud189_delete`, `cloud189_backup_directory`
+MCP tools are safe-only: `cloud189_status`, `cloud189_roots`, `cloud189_list`, `cloud189_tree`, `cloud189_search`, `cloud189_quota`, `cloud189_download`, `cloud189_upload_safe`, `cloud189_mkdir_safe`, `cloud189_sync_upload_safe`, and `cloud189_plan`.
+
+MCP intentionally does not expose raw large-object commands (`upload-large-*`, `sync-large-*`, legacy `sync-upload`). Use CLI `transfer-status` for resumable container status until MCP job/status support exists.
 
 ## MCP Config Snippet
 
@@ -85,7 +101,7 @@ MCP tools: `cloud189_login_qr`, `cloud189_list`, `cloud189_search`, `cloud189_up
 **Always:**
 - Use `--json` output for reliable parsing
 - List/search first, then operate by returned ID (never guess IDs)
-- Use `upload-safe` instead of `upload` (prevents overwrite)
+- Agents should use `upload-safe` / `sync-upload-safe`, not raw `upload` / `sync`
 
 **Never:**
 - Upload private keys (RSA, EC, Ed25519)
