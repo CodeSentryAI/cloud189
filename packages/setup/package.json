@@ -1,7 +1,7 @@
 {
   "name": "@codesentryai/cloud189-setup",
-  "version": "1.0.2",
-  "description": "Cloud189 Agent Storage one-command installer \u2014 installs CLI + MCP, runs QR login, creates /AgentStorage folders, enables Data Leak Guard, prints MCP config. Free cloud storage for AI agents powered by Tianyi Cloud 189 / \u5929\u7ffc\u4e91\u76d8.",
+  "version": "2.0.0",
+  "description": "Cloud189 Agent Storage one-command installer — installs CLI + MCP, runs QR login, creates /AgentStorage folders, enables Data Leak Guard, prints MCP config. Free cloud storage for AI agents powered by Tianyi Cloud 189 / 天翼云盘.",
   "license": "MIT",
   "author": "CodeSentryAI",
   "repository": {
