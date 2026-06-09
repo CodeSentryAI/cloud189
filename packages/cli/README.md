@@ -63,6 +63,15 @@ cloud189 sync-large-dir ./huge-dir <remoteFolderId>
 
 If interrupted, rerun the same command to resume from uploaded chunks/bundles.
 
+Check resumable container progress at any time:
+
+```bash
+cloud189 transfer-status <remoteContainerId>
+cloud189 transfer-status <remoteContainerId> --json
+```
+
+`transfer-status` reads `.cloud189-split-*` or `.cloud189-dir-*` manifest/progress files and reports completion percent, uploaded chunks/bundles, bytes, and whether the transfer is resumable.
+
 ### Other CLI commands
 
 ```bash

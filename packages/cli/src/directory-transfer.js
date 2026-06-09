@@ -180,11 +180,11 @@ async function remoteBundleReusable(client, remoteFile, expected, tmpDir, verify
 }
 
 async function writeProgress(client, dirFolderId, progress, existingProgressFiles) {
+  const result = await uploadJsonAsFile(client, progress, DIR_PROGRESS_NAME, dirFolderId);
   if (existingProgressFiles.length) {
     await deleteRemoteFiles(client, existingProgressFiles);
     existingProgressFiles.length = 0;
   }
-  const result = await uploadJsonAsFile(client, progress, DIR_PROGRESS_NAME, dirFolderId);
   existingProgressFiles.push({ id: result.file.userFileId, name: DIR_PROGRESS_NAME, parentId: dirFolderId, size: result.file.fileSize });
 }
 

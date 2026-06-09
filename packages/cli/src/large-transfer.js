@@ -147,11 +147,11 @@ async function remoteChunkIsReusable(client, remoteFile, expected, tmpDir, verif
 }
 
 async function writeProgressManifest(client, splitFolderId, progress, existingProgressFiles = []) {
+  const result = await uploadJsonAsFile(client, progress, PROGRESS_NAME, splitFolderId);
   if (existingProgressFiles.length) {
     await deleteRemoteFiles(client, existingProgressFiles);
     existingProgressFiles.length = 0;
   }
-  const result = await uploadJsonAsFile(client, progress, PROGRESS_NAME, splitFolderId);
   existingProgressFiles.push({ id: result.file.userFileId, name: PROGRESS_NAME, parentId: splitFolderId, size: result.file.fileSize });
   return result;
 }

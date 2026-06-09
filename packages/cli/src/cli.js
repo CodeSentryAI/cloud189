@@ -26,6 +26,7 @@ const {
 const { pollDownload, pollUpload, runUploadPass } = require('./sync');
 const { downloadFile, downloadFolder, uploadPath } = require('./transfer');
 const { simpleSyncGuard, simpleUploadGuard } = require('./upload-policy');
+const { inspectTransfer } = require('./transfer-status');
 const { guardBeforeUpload, cleanupRedacted } = require('./security/data-leak-guard');
 const {
   assertNoUploadConflict,
@@ -63,6 +64,7 @@ const COMMANDS = [
   'sync-upload <localDir> <remoteFolderId> [--once] [--interval <ms>]',
   'sync-upload-safe <localDir> <remoteFolderId> [--once] [--interval <ms>]',
   'sync-download <remoteFolderId> <localDir> [--once] [--interval <ms>]',
+  'transfer-status <remoteContainerId>',
   'plan <rm|mv|rename-folder|upload|sync-upload> ...',
   'init-agent <name>',
   'agent-status',
@@ -123,6 +125,18 @@ function formatUploadResult(item) {
   if (item.dirBundle) return `uploaded dir-bundle ${item.dirName} ${item.remoteFolderId} (${item.bundleCount} bundles, ${item.fileCount} files)`;
   if (item.split) return `uploaded split ${item.fileName} ${item.remoteFolderId} (${item.chunkCount} chunks)`;
   return `uploaded ${item.fileName} ${item.remoteFileId}`;
+}
+
+function formatTransferStatus(status) {
+  const lines = [
+    `transfer ${status.status}: ${status.name || status.remoteContainerId}`,
+    `mode: ${status.mode}`,
+    `progress: ${status.percent}% (${status.completedUnits}/${status.totalUnits} ${status.unit})`,
+    `bytes: ${formatBytes(status.completedBytes)} / ${formatBytes(status.totalBytes)}`,
+    `resume: ${status.resumeSupported ? 'supported' : 'unsupported'}`
+  ];
+  if (status.fileCount !== undefined) lines.splice(2, 0, `files: ${status.fileCount}`);
+  return lines.join('\n');
 }
 
 function remoteTaskOptions(options) {
@@ -667,6 +681,18 @@ async function main(argv = process.argv.slice(2)) {
       intervalMs: parsed.options.interval
     });
     console.log(parsed.options.once ? 'sync-download pass complete' : 'sync-download running');
+    return;
+  }
+
+  if (parsed.command === 'transfer-status') {
+    const remoteContainerId = requireArg(parsed.args[0], 'remoteContainerId');
+    const client = createClient();
+    const status = await inspectTransfer(client, remoteContainerId);
+    if (wantsJson) {
+      writeJsonOutput(status);
+      return;
+    }
+    console.log(formatTransferStatus(status));
     return;
   }
 
