@@ -23,8 +23,9 @@ const {
   renameRemoteFolder,
   searchRemoteEntries
 } = require('./remote');
-const { pollDownload, pollUpload } = require('./sync');
+const { pollDownload, pollUpload, runUploadPass } = require('./sync');
 const { downloadFile, downloadFolder, uploadPath } = require('./transfer');
+const { simpleSyncGuard, simpleUploadGuard } = require('./upload-policy');
 const { guardBeforeUpload, cleanupRedacted } = require('./security/data-leak-guard');
 const {
   assertNoUploadConflict,
@@ -51,9 +52,14 @@ const COMMANDS = [
   'quota',
   'tree [remoteFolderId] [--depth <n>]',
   'search <keyword> [remoteFolderId] [--depth <n>]',
-  'upload <localPath> <remoteFolderId>',
+  'upload <smallFileOrSmallDir> <remoteFolderId>',
+  'upload-large-file <localFile> <remoteFolderId>',
+  'upload-large-dir <localDir> <remoteFolderId>',
   'upload-safe <localPath> <remoteFolderId>',
   'download <remoteId> <localPath> [--dir]',
+  'sync <smallFileOrSmallDir> <remoteFolderId>',
+  'sync-large-file <localFile> <remoteFolderId> [--once]',
+  'sync-large-dir <localDir> <remoteFolderId> [--once]',
   'sync-upload <localDir> <remoteFolderId> [--once] [--interval <ms>]',
   'sync-upload-safe <localDir> <remoteFolderId> [--once] [--interval <ms>]',
   'sync-download <remoteFolderId> <localDir> [--once] [--interval <ms>]',
@@ -64,7 +70,7 @@ const COMMANDS = [
   'logout'
 ];
 
-const BOOLEAN_OPTIONS = new Set(['json', 'help', 'dir', 'once', 'force-sensitive', 'redact']);
+const BOOLEAN_OPTIONS = new Set(['json', 'help', 'dir', 'once', 'force-sensitive', 'redact', 'target-dir-bundle']);
 
 function parseArgs(argv) {
   const positional = [];
@@ -111,6 +117,12 @@ function requireArg(value, label) {
 
 function printLines(lines) {
   console.log(lines.join('\n'));
+}
+
+function formatUploadResult(item) {
+  if (item.dirBundle) return `uploaded dir-bundle ${item.dirName} ${item.remoteFolderId} (${item.bundleCount} bundles, ${item.fileCount} files)`;
+  if (item.split) return `uploaded split ${item.fileName} ${item.remoteFolderId} (${item.chunkCount} chunks)`;
+  return `uploaded ${item.fileName} ${item.remoteFileId}`;
 }
 
 function remoteTaskOptions(options) {
@@ -484,17 +496,18 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
-  if (parsed.command === 'upload') {
+  if (parsed.command === 'upload' || parsed.command === 'upload-large-file' || parsed.command === 'upload-large-dir') {
     const localPath = requireArg(parsed.args[0], 'localPath');
     const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
-    const guardResult = await runGuard(localPath);
-    if (!guardResult) return; // blocked
-
+    const explicitLarge = parsed.command === 'upload-large-file' || parsed.command === 'upload-large-dir';
+    if (parsed.command === 'upload') {
+      simpleUploadGuard(localPath);
+    }
     const client = createClient();
-    const uploadSource = guardResult.decision === 'replace'
-      ? await uploadWithRedacted(localPath, guardResult.redactedMap)
-      : localPath;
-    const uploaded = await uploadPath(client, uploadSource, remoteFolderId, {
+    const uploaded = await uploadPath(client, localPath, remoteFolderId, {
+      forceLargeFileSplit: explicitLarge && parsed.command === 'upload-large-file',
+      forceDirBundle: explicitLarge && parsed.command === 'upload-large-dir',
+      useTargetAsDirBundle: Boolean(parsed.options['target-dir-bundle']),
       callbacks: {
         onProgress(progress) {
           process.stderr.write(`\rupload ${Math.round(progress)}%`);
@@ -503,11 +516,10 @@ async function main(argv = process.argv.slice(2)) {
     });
     process.stderr.write(uploaded.length ? '\n' : '');
     if (wantsJson) {
-      writeJsonOutput({ ok: true, uploaded, guard: { decision: guardResult.decision, findings: guardResult.findings } });
+      writeJsonOutput({ ok: true, command: parsed.command, uploaded });
       return;
     }
-    printLines(uploaded.map((item) => `uploaded ${item.fileName} ${item.remoteFileId}`));
-    if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
+    printLines(uploaded.map(formatUploadResult));
     return;
   }
 
@@ -535,7 +547,7 @@ async function main(argv = process.argv.slice(2)) {
       writeJsonOutput({ ok: true, uploaded, guard: { decision: guardResult.decision, findings: guardResult.findings } });
       return;
     }
-    printLines(uploaded.map((item) => `uploaded ${item.fileName} ${item.remoteFileId}`));
+    printLines(uploaded.map(formatUploadResult));
     if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
     return;
   }
@@ -565,21 +577,53 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (parsed.command === 'sync' || parsed.command === 'sync-large-file' || parsed.command === 'sync-large-dir') {
+    const localPath = requireArg(parsed.args[0], 'localPath');
+    const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
+    if (parsed.command === 'sync') {
+      simpleSyncGuard(localPath);
+    }
+    const client = createClient();
+    const stat = fs.statSync(localPath);
+    if (stat.isFile()) {
+      const uploaded = await uploadPath(client, localPath, remoteFolderId, {
+        forceLargeFileSplit: parsed.command === 'sync-large-file',
+        callbacks: {
+          onProgress(progress) {
+            process.stderr.write(`\rupload ${Math.round(progress)}%`);
+          }
+        }
+      });
+      process.stderr.write(uploaded.length ? '\n' : '');
+      if (wantsJson) {
+        writeJsonOutput({ ok: true, command: parsed.command, uploaded });
+        return;
+      }
+      printLines(uploaded.map(formatUploadResult));
+      return;
+    }
+    const result = await runUploadPass(client, localPath, remoteFolderId, undefined, {
+      forceDirBundle: parsed.command === 'sync-large-dir',
+      useTargetAsDirBundle: Boolean(parsed.options['target-dir-bundle'])
+    });
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, command: parsed.command, uploaded: result });
+      return;
+    }
+    console.log(`${parsed.command} pass complete`);
+    return;
+  }
+
   if (parsed.command === 'sync-upload') {
     const localDir = requireArg(parsed.args[0], 'localDir');
     const remoteFolderId = requireArg(parsed.args[1], 'remoteFolderId');
-    const guardResult = await runGuard(localDir);
-    if (!guardResult) return; // blocked
     const client = createClient();
-    const syncSource = guardResult.decision === 'replace'
-      ? await uploadWithRedacted(localDir, guardResult.redactedMap)
-      : localDir;
-    await pollUpload(client, syncSource, remoteFolderId, {
+    await pollUpload(client, localDir, remoteFolderId, {
       once: Boolean(parsed.options.once),
-      intervalMs: parsed.options.interval
+      intervalMs: parsed.options.interval,
+      useTargetAsDirBundle: Boolean(parsed.options['target-dir-bundle'])
     });
     console.log(parsed.options.once ? 'sync-upload pass complete' : 'sync-upload running');
-    if (guardResult.decision === 'replace') cleanupAllRedacted(guardResult.redactedMap);
     return;
   }
 

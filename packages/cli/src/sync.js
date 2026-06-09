@@ -7,10 +7,19 @@ const {
   ensureRemoteFolderPath,
   indexRemoteFilesByPath
 } = require('./remote');
-const { downloadFile } = require('./transfer');
+const { downloadFile, uploadPath } = require('./transfer');
+const { shouldBundleDirectory, uploadDirectoryAsBundle } = require('./directory-transfer');
 const { hasChanged, loadState, recordOperation, saveState } = require('./sync-state');
 
-async function runUploadPass(client, localDir, remoteFolderId, statePath = getStatePath()) {
+async function runUploadPass(client, localDir, remoteFolderId, statePath = getStatePath(), options = {}) {
+  if (options.forceDirBundle || shouldBundleDirectory(localDir, options)) {
+    const result = await uploadDirectoryAsBundle(client, localDir, remoteFolderId, options);
+    const state = loadState(statePath);
+    recordOperation(state, { type: 'sync-upload-dir-bundle', count: result.uploadedBundles, skipped: result.reusedBundles });
+    saveState(statePath, state);
+    return [result.dirName];
+  }
+
   const root = path.resolve(localDir);
   const state = loadState(statePath);
   const uploaded = [];
@@ -37,8 +46,12 @@ async function runUploadPass(client, localDir, remoteFolderId, statePath = getSt
 
     const folderId = await ensureRemoteFolderPath(client, remoteFolderId, key.split('/').slice(0, -1));
     await deleteRemoteFiles(client, remoteMatches);
-    const result = await client.upload({ parentFolderId: folderId, filePath });
-    state.uploads[key] = { ...signature, remoteFileId: result.file.userFileId };
+    const results = await uploadPath(client, filePath, folderId);
+    state.uploads[key] = {
+      ...signature,
+      remoteFileId: results[0]?.remoteFileId || results[0]?.remoteFolderId,
+      split: Boolean(results[0]?.split)
+    };
     uploaded.push(key);
   }
 
@@ -71,11 +84,11 @@ async function runDownloadPass(client, remoteFolderId, localDir, statePath = get
 
 async function pollUpload(client, localDir, remoteFolderId, options = {}) {
   const intervalMs = Number(options.intervalMs || 5000);
-  await runUploadPass(client, localDir, remoteFolderId, options.statePath);
+  await runUploadPass(client, localDir, remoteFolderId, options.statePath, options);
   if (options.once) return;
 
   setInterval(() => {
-    runUploadPass(client, localDir, remoteFolderId, options.statePath).catch((error) => {
+    runUploadPass(client, localDir, remoteFolderId, options.statePath, options).catch((error) => {
       console.error(`sync-upload failed: ${error.message}`);
     });
   }, intervalMs);

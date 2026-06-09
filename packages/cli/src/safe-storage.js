@@ -8,6 +8,7 @@ const {
   listAll,
   PERSONAL_ROOT_FOLDER_ID
 } = require('./remote');
+const { uploadPath } = require('./transfer');
 
 function itemModified(item) {
   return item.lastOpTime || item.createDate || item.modifyDate || item.rev || '';
@@ -152,10 +153,11 @@ async function runSafeUploadPass(client, localDir, remoteFolderId) {
 
     if (!remote) {
       const folderId = await ensureRemoteFolderPath(client, remoteFolderId, key.split('/').slice(0, -1));
-      const result = await client.upload({ parentFolderId: folderId, filePath });
+      const results = await uploadPath(client, filePath, folderId);
       uploaded.push(key);
       nextFiles[key] = {
-        remoteId: result.file.userFileId,
+        remoteId: results[0]?.remoteFileId || results[0]?.remoteFolderId,
+        split: Boolean(results[0]?.split),
         localMtimeMs: localSignature.mtimeMs,
         localSize: localSignature.size,
         remoteModified: '',
@@ -191,10 +193,11 @@ async function runSafeUploadPass(client, localDir, remoteFolderId) {
     }
 
     const folderId = await ensureRemoteFolderPath(client, remoteFolderId, key.split('/').slice(0, -1));
-    const result = await client.upload({ parentFolderId: folderId, filePath });
+    const results = await uploadPath(client, filePath, folderId);
     uploaded.push(key);
     nextFiles[key] = {
-      remoteId: result.file.userFileId,
+      remoteId: results[0]?.remoteFileId || results[0]?.remoteFolderId,
+      split: Boolean(results[0]?.split),
       localMtimeMs: localSignature.mtimeMs,
       localSize: localSignature.size,
       remoteModified: '',

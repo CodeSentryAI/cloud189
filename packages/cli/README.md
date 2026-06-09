@@ -30,15 +30,55 @@ cloud189 login-qr
 cloud189 status --json
 ```
 
-## Use as CLI
+## Human CLI API
+
+Cloud189 separates simple human uploads from resumable large-object uploads.
+
+### Simple upload / sync
+
+Use `upload` and `sync` only for small objects:
+
+- file size <= 2 GiB
+- directory total size <= 2 GiB **and** file count <= 1000
+
+```bash
+cloud189 upload ./file.txt <remoteFolderId>
+cloud189 upload ./small-dir <remoteFolderId>
+cloud189 sync ./file.txt <remoteFolderId>
+cloud189 sync ./small-dir <remoteFolderId>
+```
+
+If the path is too large, the CLI refuses and tells you which explicit large-object command to run.
+
+### Resumable large-object upload / sync
+
+Large files and large directories use explicit commands and create resumable containers:
+
+```bash
+cloud189 upload-large-file ./big.bin <remoteFolderId>   # creates big.bin.cloud189-split/
+cloud189 upload-large-dir ./huge-dir <remoteFolderId>   # creates huge-dir.cloud189-dir/
+cloud189 sync-large-file ./big.bin <remoteFolderId>
+cloud189 sync-large-dir ./huge-dir <remoteFolderId>
+```
+
+If interrupted, rerun the same command to resume from uploaded chunks/bundles.
+
+### Other CLI commands
 
 ```bash
 cloud189 search "keyword"
 cloud189 list -11
 cloud189 download <remoteId> ./file.md
+cloud189 quota
+```
+
+## Agent / MCP API
+
+Agents should use safe tools rather than raw human CLI commands. Safe tools are JSON-oriented, Data-Leak-Guard protected, write-root constrained, and refuse overwrites/deletes by default:
+
+```bash
 cloud189 upload-safe ./result.md <writeRootId>
 cloud189 sync-upload-safe ./results <writeRootId> --once
-cloud189 quota
 ```
 
 ## Use as MCP Server
@@ -93,11 +133,12 @@ See [`templates/MCP_CONFIGS.md`](templates/MCP_CONFIGS.md) for full examples.
 
 ## Agent-Safe Mode
 
-| Allowed | Denied |
-|---|---|
-| login, login-qr, login-sso, status, quota, roots, list, tree, search, download, mkdir, mkdir-safe, upload-safe, sync-upload-safe, sync-download, plan | rm, mv, rename-folder, raw upload, raw sync-upload |
+| Interface | Allowed by default | Denied / discouraged |
+|---|---|---|
+| Human CLI | raw `upload`, `upload-large-*`, `sync`, `sync-large-*`, download/list/search | destructive operations require explicit commands/plan |
+| MCP / Agent | `upload-safe`, `sync-upload-safe`, list/search/download/status/plan | raw upload/sync, delete/move/rename |
 
-Denied operations return `DENIED_AGENT_SAFE`. Use `cloud189 plan <cmd>` instead.
+MCP agents should use safe tools. Human operators may use raw CLI commands explicitly when targeting folders such as `/share`.
 
 ## Agent Storage Layout
 
