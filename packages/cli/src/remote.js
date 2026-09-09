@@ -55,6 +55,20 @@ async function renameRemoteFolder(client, folderId, folderName) {
   return client.renameFolder({ folderId, folderName });
 }
 
+// Custom patch: rename a FILE (the SDK only wraps renameFolder).
+// Uses the official open API endpoint directly.
+async function renameRemoteFile(client, fileId, fileName) {
+  const { API_URL } = require('cloud189-sdk/dist/const');
+  return client.request
+    .post(`${API_URL}/open/file/renameFile.action`, {
+      form: {
+        destFileName: fileName,
+        fileId: String(fileId)
+      }
+    })
+    .json();
+}
+
 async function runBatchTask(client, type, taskInfos, options = {}) {
   const result = await client.createBatchTask({
     type,
@@ -194,6 +208,7 @@ module.exports = {
   moveRemoteItem,
   listAll,
   PERSONAL_ROOT_FOLDER_ID,
+  renameRemoteFile,
   renameRemoteFolder,
   runBatchTask,
   resolveFolderId,

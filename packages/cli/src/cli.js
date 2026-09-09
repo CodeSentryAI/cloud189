@@ -20,6 +20,7 @@ const {
   listAll,
   moveRemoteItem,
   PERSONAL_ROOT_FOLDER_ID,
+  renameRemoteFile,
   renameRemoteFolder,
   searchRemoteEntries
 } = require('./remote');
@@ -493,6 +494,20 @@ async function main(argv = process.argv.slice(2)) {
     const client = createClient();
     await renameRemoteFolder(client, remoteFolderId, newName);
     console.log(`renamed dir ${remoteFolderId} ${newName}`);
+    return;
+  }
+
+  // Custom patch: rename a remote FILE by id.
+  if (parsed.command === 'rename-file') {
+    const remoteFileId = requireArg(parsed.args[0], 'remoteFileId');
+    const newName = requireArg(parsed.args[1], 'newName');
+    const client = createClient();
+    await renameRemoteFile(client, remoteFileId, newName);
+    if (wantsJson) {
+      writeJsonOutput({ ok: true, fileId: String(remoteFileId), newName });
+    } else {
+      console.log(`renamed file ${remoteFileId} ${newName}`);
+    }
     return;
   }
 

@@ -9,11 +9,25 @@ const z = require('zod');
 const PACKAGE_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
 const PERSONAL_ROOT_FOLDER_ID = '-11';
 
+// Windows compatibility patch: resolve the cloud189 CLI as a JS entry executed by
+// the current Node binary, because spawn('cloud189') cannot resolve the .cmd shim.
+const CLOUD189_CLI_JS = path.join(
+  path.dirname(require.resolve('@codesentryai/cloud189/package.json')),
+  'bin',
+  'cloud189.js'
+);
+
 // --- helpers ----------------------------------------------------------------
+
+// Custom patch: Tianyi Cloud binds the sessionKey to the login egress IP.
+// On dual-stack networks Node may prefer IPv6 while login used IPv4,
+// causing HTTP 400 "InvalidSessionKey - check ip error".
+// Force IPv4-first explicitly for every CLI child process (not reliant on env).
+const DNS_ARGS = ['--dns-result-order=ipv4first'];
 
 function runCloud189(args, opts = {}) {
   try {
-    const result = execFileSync('cloud189', [...args, '--json'], {
+    const result = execFileSync(process.execPath, [...DNS_ARGS, CLOUD189_CLI_JS, ...args, '--json'], {
       timeout: 30000,
       ...opts
     });
@@ -204,6 +218,91 @@ server.tool(
     args: z.array(z.string()).describe('Arguments for the planned command')
   },
   (args) => runTool(() => runCloud189(['plan', args.command, ...args.args]))
+);
+
+// --- custom patch: destructive + rename tools -------------------------------
+
+function assertConfirmed(confirm, action) {
+  if (confirm !== true) {
+    const err = new Error(
+      `Refused to ${action} because confirm is not true. First call cloud189_plan to preview, then re-run with confirm: true.`
+    );
+    err.code = 'CONFIRM_REQUIRED';
+    throw err;
+  }
+}
+
+server.tool(
+  'cloud189_rename_folder',
+  'Rename a remote folder.',
+  {
+    remoteFolderId: remoteIdSchema.describe('Remote folder ID'),
+    newName: z.string().min(1).describe('New folder name'),
+    confirm: z.boolean().optional().describe('Must be true to execute')
+  },
+  (args) =>
+    runTool(() => {
+      assertConfirmed(args.confirm, 'rename folder');
+      return runCloud189(['rename-folder', args.remoteFolderId, args.newName]);
+    })
+);
+
+server.tool(
+  'cloud189_rename_file',
+  'Rename a remote file (custom patch, uses the official renameFile API).',
+  {
+    remoteFileId: remoteIdSchema.describe('Remote file ID'),
+    newName: z.string().min(1).describe('New file name (including extension)'),
+    confirm: z.boolean().optional().describe('Must be true to execute')
+  },
+  (args) =>
+    runTool(() => {
+      assertConfirmed(args.confirm, 'rename file');
+      return runCloud189(['rename-file', args.remoteFileId, args.newName]);
+    })
+);
+
+server.tool(
+  'cloud189_rm',
+  'Delete a remote file or folder. DANGEROUS. Use cloud189_plan first to preview.',
+  {
+    remoteId: remoteIdSchema.describe('Remote file or folder ID'),
+    dir: z.boolean().optional().describe('Set to true if deleting a folder'),
+    name: z.string().optional().describe('Remote item name (recommended, used for audit)'),
+    parent: remoteIdSchema.optional().describe('Parent folder ID (recommended, used for audit)'),
+    confirm: z.boolean().optional().describe('Must be true to execute')
+  },
+  (args) =>
+    runTool(() => {
+      assertConfirmed(args.confirm, 'delete');
+      const cmdArgs = ['rm', args.remoteId];
+      if (args.dir) cmdArgs.push('--dir');
+      if (args.name) cmdArgs.push('--name', args.name);
+      if (args.parent) cmdArgs.push('--parent', args.parent);
+      return runCloud189(cmdArgs);
+    })
+);
+
+server.tool(
+  'cloud189_mv',
+  'Move a remote file or folder to another folder. DANGEROUS. Use cloud189_plan first to preview.',
+  {
+    remoteId: remoteIdSchema.describe('Remote file or folder ID'),
+    targetFolderId: remoteIdSchema.describe('Destination folder ID'),
+    dir: z.boolean().optional().describe('Set to true if moving a folder'),
+    name: z.string().optional().describe('Remote item name (recommended, used for audit)'),
+    parent: remoteIdSchema.optional().describe('Current parent folder ID (recommended, used for audit)'),
+    confirm: z.boolean().optional().describe('Must be true to execute')
+  },
+  (args) =>
+    runTool(() => {
+      assertConfirmed(args.confirm, 'move');
+      const cmdArgs = ['mv', args.remoteId, args.targetFolderId];
+      if (args.dir) cmdArgs.push('--dir');
+      if (args.name) cmdArgs.push('--name', args.name);
+      if (args.parent) cmdArgs.push('--parent', args.parent);
+      return runCloud189(cmdArgs);
+    })
 );
 
 // --- main -------------------------------------------------------------------
