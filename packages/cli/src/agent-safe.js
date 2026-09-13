@@ -32,7 +32,8 @@ const SAFE_COMMANDS = new Set([
 const DANGEROUS_COMMANDS = new Set([
   'rm',
   'mv',
-  'rename-folder'
+  'rename-folder',
+  'rename-file'
 ]);
 
 function defaultAgentConfig() {
