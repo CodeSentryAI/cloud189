@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "npm -w packages/cli test",
+    "test": "npm --workspaces test",
     "test:all": "npm --workspaces test"
   }
 }

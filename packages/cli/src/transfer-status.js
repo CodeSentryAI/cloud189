@@ -1,9 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const http = require('http');
-const https = require('https');
 const { listAll } = require('./remote');
+const { downloadUrlToFile, fetchDownloadUrl } = require('./http-utils');
 const { MANIFEST_NAME, PROGRESS_NAME } = require('./large-transfer');
 const { DIR_MANIFEST_NAME, DIR_PROGRESS_NAME } = require('./directory-transfer');
 
@@ -109,34 +108,8 @@ async function readJsonFile(client, remoteFileId) {
 }
 
 async function downloadRemoteFileToPath(client, remoteFileId, localPath) {
-  const response = await client.getFileDownloadUrl({ fileId: remoteFileId }).json();
-  const url = response.fileDownloadUrl;
-  if (!url) throw new Error(`No download URL returned for ${remoteFileId}`);
-  fs.mkdirSync(path.dirname(path.resolve(localPath)), { recursive: true });
-  await downloadUrl(url, localPath);
-}
-
-async function downloadUrl(url, localPath, redirectsLeft = 5) {
-  await new Promise((resolve, reject) => {
-    const transport = url.startsWith('https:') ? https : http;
-    transport.get(url, (res) => {
-      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
-        res.resume();
-        resolve(downloadUrl(new URL(res.headers.location, url).toString(), localPath, redirectsLeft - 1));
-        return;
-      }
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        res.resume();
-        reject(new Error(`Download failed with HTTP ${res.statusCode}`));
-        return;
-      }
-      const out = fs.createWriteStream(localPath);
-      res.pipe(out);
-      res.on('error', reject);
-      out.on('error', reject);
-      out.on('finish', resolve);
-    }).on('error', reject);
-  });
+  const url = await fetchDownloadUrl(client, remoteFileId);
+  await downloadUrlToFile(url, localPath);
 }
 
 module.exports = { inspectTransfer };

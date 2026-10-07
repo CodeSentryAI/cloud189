@@ -38,6 +38,21 @@ test('parseArgs treats --help as boolean', () => {
   assert.deepEqual(parsed.options, { help: true });
 });
 
+test('parseArgs treats -- as an end-of-options terminator', () => {
+  const parsed = parseArgs(['upload', '--', '--weird-name', '-11']);
+
+  assert.equal(parsed.command, 'upload');
+  assert.deepEqual(parsed.args, ['--weird-name', '-11']);
+  assert.deepEqual(parsed.options, {});
+});
+
+test('parseArgs reads --guard-mode value', () => {
+  const parsed = parseArgs(['status', '--guard-mode', 'mcp']);
+
+  assert.equal(parsed.command, 'status');
+  assert.deepEqual(parsed.options, { 'guard-mode': 'mcp' });
+});
+
 test('parseArgs treats --once as boolean', () => {
   const parsed = parseArgs(['sync-upload', './data', '123', '--once']);
 
@@ -96,5 +111,6 @@ test('usage lists core commands', () => {
   assert.match(text, /transfer-status/);
   assert.match(text, /agent-status/);
   assert.match(text, /sync-download/);
+  assert.match(text, /rename-file/);
   assert.match(text, /status/);
 });

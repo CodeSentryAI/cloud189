@@ -1,4 +1,3 @@
-const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { ensureDir, readJson, writeJson } = require('./config');
@@ -159,25 +158,6 @@ function writeJsonOutput(payload) {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-function isRemoteId(value) {
-  return typeof value === 'string' && /^-?\d+$/.test(value);
-}
-
-function validateLocalPath(localPath) {
-  const resolved = path.resolve(localPath);
-  if (resolved === '/' || resolved === '/etc' || resolved.startsWith('/etc/')) {
-    const error = new Error('localPath is outside the allowed workspace.');
-    error.code = 'DENIED_LOCAL_PATH';
-    throw error;
-  }
-  if (!fs.existsSync(resolved)) {
-    const error = new Error(`localPath does not exist: ${localPath}`);
-    error.code = 'LOCAL_PATH_NOT_FOUND';
-    throw error;
-  }
-  return resolved;
-}
-
 module.exports = {
   SAFE_COMMANDS,
   assertCommandAllowed,
@@ -186,10 +166,8 @@ module.exports = {
   errorPayload,
   getAgentConfigPath,
   isAgentSafeMode,
-  isRemoteId,
   loadAgentConfig,
   resolveAgentContext,
   saveAgentConfig,
-  validateLocalPath,
   writeJsonOutput
 };

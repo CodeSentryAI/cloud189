@@ -1,17 +1,16 @@
 const fs = require('fs');
 const os = require('os');
-const http = require('http');
-const https = require('https');
 const path = require('path');
 const { ensureRemoteFolderPath, listAll } = require('./remote');
-const { relativeKey, walkFiles } = require('./fs-utils');
+const { relativeKey, safeRemoteName, walkFiles } = require('./fs-utils');
+const { downloadUrlToFile, fetchDownloadUrl, requestStream } = require('./http-utils');
 const {
   MANIFEST_NAME,
+  assertTmpSpace,
   isSplitFolderName,
   largeFileOptions,
   hashFile,
   maybeReadSplitManifest,
-  safeChunkSizeForDirectory,
   originalNameFromSplitFolder,
   uploadLargeFileAsSplit
 } = require('./large-transfer');
@@ -22,29 +21,6 @@ const {
   shouldBundleDirectory,
   uploadDirectoryAsBundle
 } = require('./directory-transfer');
-
-function requestStream(url, redirects = 3) {
-  return new Promise((resolve, reject) => {
-    const transport = url.startsWith('https:') ? https : http;
-    const request = transport.get(url, (response) => {
-      if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location && redirects > 0) {
-        response.resume();
-        const nextUrl = new URL(response.headers.location, url).toString();
-        resolve(requestStream(nextUrl, redirects - 1));
-        return;
-      }
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        response.resume();
-        reject(new Error(`Download failed with HTTP ${response.statusCode}`));
-        return;
-      }
-
-      resolve(response);
-    });
-    request.on('error', reject);
-  });
-}
 
 async function uploadPath(client, localPath, remoteFolderId, options = {}) {
   const stat = fs.statSync(localPath);
@@ -79,23 +55,8 @@ async function uploadPath(client, localPath, remoteFolderId, options = {}) {
 }
 
 async function downloadFileToPath(client, remoteFileId, localPath) {
-  const response = await client.getFileDownloadUrl({ fileId: remoteFileId }).json();
-  const url = response.fileDownloadUrl;
-  if (!url) {
-    throw new Error(`No download URL returned for ${remoteFileId}`);
-  }
-
-  fs.mkdirSync(path.dirname(path.resolve(localPath)), { recursive: true });
-  const input = await requestStream(url);
-  const output = fs.createWriteStream(localPath);
-
-  await new Promise((resolve, reject) => {
-    input.pipe(output);
-    input.on('error', reject);
-    output.on('error', reject);
-    output.on('finish', resolve);
-  });
-
+  const url = await fetchDownloadUrl(client, remoteFileId);
+  await downloadUrlToFile(url, localPath);
   return { remoteFileId, localPath };
 }
 
@@ -127,9 +88,14 @@ async function downloadFile(client, remoteFileId, localPath, options = {}) {
   }
 
   const input = await requestStream(url);
-  const remoteName = options.remoteName
+  let remoteName = options.remoteName
     || filenameFromContentDisposition(input.headers['content-disposition'])
-    || remoteFileId;
+    || String(remoteFileId);
+  try {
+    remoteName = safeRemoteName(remoteName, 'download filename');
+  } catch {
+    remoteName = safeRemoteName(String(remoteFileId), 'download filename');
+  }
   const targetPath = targetPathForDownload(localPath, remoteName);
 
   fs.mkdirSync(path.dirname(path.resolve(targetPath)), { recursive: true });
@@ -157,23 +123,27 @@ async function downloadSplitFolder(client, remoteFolderId, localDir, splitFolder
   if (manifest.type !== 'cloud189-split-file') return null;
 
   fs.mkdirSync(localDir, { recursive: true });
-  const outputName = manifest.originalName || originalNameFromSplitFolder(splitFolderName);
+  const outputName = safeRemoteName(
+    manifest.originalName || originalNameFromSplitFolder(splitFolderName),
+    'split original filename'
+  );
   const outputPath = path.join(localDir, outputName);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-join-'));
   const configuredOptions = largeFileOptions(options);
-  safeChunkSizeForDirectory(tmpDir, manifest.chunkSize || configuredOptions.chunkSize, configuredOptions);
+  assertTmpSpace(tmpDir, manifest.chunkSize || configuredOptions.chunkSize, configuredOptions);
   const output = fs.createWriteStream(outputPath);
 
   try {
     const filesByName = new Map(listing.fileListAO.fileList.map((file) => [file.name, file]));
     for (const chunk of [...manifest.chunks].sort((a, b) => a.index - b.index)) {
-      const remoteChunk = filesByName.get(chunk.name);
-      if (!remoteChunk) throw new Error(`Missing split chunk: ${chunk.name}`);
-      const chunkPath = path.join(tmpDir, chunk.name);
+      const chunkName = safeRemoteName(chunk.name, 'split chunk name');
+      const remoteChunk = filesByName.get(chunkName);
+      if (!remoteChunk) throw new Error(`Missing split chunk: ${chunkName}`);
+      const chunkPath = path.join(tmpDir, chunkName);
       await downloadFileToPath(client, remoteChunk.id, chunkPath);
       if (chunk.sha256) {
         const actual = await hashFile(chunkPath);
-        if (actual !== chunk.sha256) throw new Error(`Checksum mismatch for split chunk: ${chunk.name}`);
+        if (actual !== chunk.sha256) throw new Error(`Checksum mismatch for split chunk: ${chunkName}`);
       }
       await new Promise((resolve, reject) => {
         const input = fs.createReadStream(chunkPath);
@@ -210,20 +180,22 @@ async function downloadFolder(client, remoteFolderId, localDir, options = {}) {
   const listing = await listAll(client, remoteFolderId);
 
   for (const folder of listing.fileListAO.folderList) {
-    if (isSplitFolderName(folder.name)) {
-      const childResults = await downloadFolder(client, folder.id, localDir, { remoteName: folder.name });
+    const folderName = safeRemoteName(folder.name, 'remote folder name');
+    if (isSplitFolderName(folderName)) {
+      const childResults = await downloadFolder(client, folder.id, localDir, { remoteName: folderName });
       downloaded.push(...childResults);
       continue;
     }
-    const childDir = path.join(localDir, folder.name);
-    const childResults = await downloadFolder(client, folder.id, childDir, { remoteName: folder.name });
+    const childDir = path.join(localDir, folderName);
+    const childResults = await downloadFolder(client, folder.id, childDir, { remoteName: folderName });
     downloaded.push(...childResults);
   }
 
   for (const file of listing.fileListAO.fileList) {
     if (file.name === MANIFEST_NAME) continue;
-    const localPath = path.join(localDir, file.name);
-    downloaded.push(await downloadFile(client, file.id, localPath, { remoteName: file.name }));
+    const fileName = safeRemoteName(file.name, 'remote file name');
+    const localPath = path.join(localDir, fileName);
+    downloaded.push(await downloadFile(client, file.id, localPath, { remoteName: fileName }));
   }
 
   return downloaded;

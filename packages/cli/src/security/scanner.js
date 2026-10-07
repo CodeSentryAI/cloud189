@@ -1,51 +1,74 @@
 const fs = require('fs');
 const path = require('path');
 
+// All patterns are global so redaction replaces every occurrence, not just the
+// first one on a line. Scanner callers must reset lastIndex before test().
 const SECRET_PATTERNS = [
   {
     name: 'private_key_block',
     severity: 'critical',
-    regex: /-----BEGIN (RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/
+    regex: /-----BEGIN (RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/g
   },
   {
+    // Keyword must be its own segment so SECRETARY_NAME / TOKENIZER are not
+    // treated as secrets; concatenated spellings (APIKEY, SECRETACCESSKEY)
+    // are matched explicitly.
     name: 'env_api_key',
     severity: 'high',
-    regex: /\b[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_]*\s*=\s*["']?[^"'\s]{8,}/i
+    regex: /(?<![A-Za-z0-9])(?:APIKEY|SECRETACCESS_?KEY|SECRETKEY|ACCESSKEY|PRIVATEKEY|API_?KEY|SECRET_?KEY|ACCESS_?KEY|PRIVATE_?KEY|SECRET|TOKEN|PASSWORD|PASSWD)(?![A-Za-z0-9])[A-Za-z0-9_]*\s*[:=]\s*["']?(?!\$\{|\$)[^"'\s]{8,}/gi
+  },
+  {
+    // Quoted JSON/JS key; keyword must sit directly before the closing quote
+    // so "secretary" / "tokenizer" / "passwordless" do not match.
+    name: 'json_secret_assignment',
+    severity: 'high',
+    regex: /["'][A-Za-z0-9._-]*(?:secretAccessKey|apiKey|secretKey|accessKey|privateKey|api_?key|secret_?access_?key|secret_?key|access_?key|private_?key|secret|token|password|passwd)["']\s*[:=]\s*["'](?!\$\{|\$)[^"'\s]{8,}["']/gi
   },
   {
     name: 'aws_access_key_id',
     severity: 'high',
-    regex: /\bAKIA[0-9A-Z]{16}\b/
+    regex: /\bAKIA[0-9A-Z]{16}\b/g
   },
   {
     name: 'github_token',
     severity: 'high',
-    regex: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/
+    regex: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g
   },
   {
     name: 'openai_key',
     severity: 'high',
-    regex: /\bsk-[A-Za-z0-9_-]{20,}\b/
+    regex: /\bsk-[A-Za-z0-9_-]{20,}\b/g
   },
   {
     name: 'anthropic_key',
     severity: 'high',
-    regex: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/
+    regex: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g
+  },
+  {
+    // Docker config auth (base64 user:pass) and similar registry blobs.
+    name: 'registry_auth_blob',
+    severity: 'high',
+    regex: /["']?auths?["']?\s*[:=]\s*["'][A-Za-z0-9+/=]{16,}["']/gi
+  },
+  {
+    name: 'netrc_password',
+    severity: 'high',
+    regex: /\bmachine\s+\S+\s+login\s+\S+\s+password\s+\S{4,}/gi
   },
   {
     name: 'jwt',
     severity: 'medium',
-    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/
+    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g
   },
   {
     name: 'generic_bearer_token',
     severity: 'medium',
-    regex: /Bearer\s+[A-Za-z0-9._~+/=-]{20,}/i
+    regex: /Bearer\s+[A-Za-z0-9._~+/=-]{20,}/gi
   },
   {
     name: 'password_assignment',
     severity: 'medium',
-    regex: /\b(?:password|passwd|pwd)\s*[:=]\s*["']?[^"'\s]{8,}/i
+    regex: /\b(?:password|passwd|pwd)\s*[:=]\s*["']?(?!\$\{|\$)[^"'\s]{8,}/gi
   }
 ];
 
@@ -113,6 +136,7 @@ function scanFile(filePath, policy) {
   for (const rule of SECRET_PATTERNS) {
     const lines = content.split('\n');
     for (let i = 0; i < lines.length; i++) {
+      rule.regex.lastIndex = 0;
       if (rule.regex.test(lines[i])) {
         findings.push({
           type: 'secret_pattern',

@@ -229,6 +229,9 @@ function planActions(command, args) {
   if (command === 'rename-folder') {
     return [{ action: 'rename', type: 'dir', id: args[0], name: args[1], risk: 'requires-confirm' }];
   }
+  if (command === 'rename-file') {
+    return [{ action: 'rename', type: 'file', id: args[0], name: args[1], risk: 'requires-confirm' }];
+  }
   if (command === 'upload') {
     return [{ action: 'upload', type: 'local', id: `local:${args[0]}`, name: path.basename(args[0] || ''), targetFolderId: args[1], risk: 'safe-unless-conflict' }];
   }
@@ -260,6 +263,13 @@ function planDescription(command, args) {
       intent: `PLAN MODE: rename remote folder ${args[0]} to ${args[1]}.`,
       potentialImpact: 'This changes a shared folder name and may confuse users or automations that expect the old name.',
       safeAlternative: 'Prefer creating a new safe folder and uploading new outputs there.'
+    };
+  }
+  if (command === 'rename-file') {
+    return {
+      intent: `PLAN MODE: rename remote file ${args[0]} to ${args[1]}.`,
+      potentialImpact: 'This changes the remote file name and may break saved remoteId/name assumptions.',
+      safeAlternative: 'Prefer uploading a new file with the desired name instead of renaming in place.'
     };
   }
   if (command === 'upload') {

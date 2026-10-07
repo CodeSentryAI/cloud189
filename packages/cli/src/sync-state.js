@@ -1,11 +1,32 @@
+const fs = require('fs');
+const path = require('path');
 const { readJson, writeJson } = require('./config');
 
-function loadState(filePath) {
-  return readJson(filePath, {
+function emptyState() {
+  return {
     uploads: {},
     downloads: {},
     operations: []
-  });
+  };
+}
+
+// Before v2.0 the state lived in ~/.config/cloud189-cli/state.json. Read it as a
+// fallback so upgrades keep their sync history (a later saveState migrates it).
+function legacyStatePath(filePath) {
+  const dir = path.dirname(filePath);
+  if (path.basename(dir) !== 'cloud189') return null;
+  const legacy = path.join(path.dirname(dir), 'cloud189-cli', path.basename(filePath));
+  return legacy === filePath ? null : legacy;
+}
+
+function loadState(filePath) {
+  if (!fs.existsSync(filePath)) {
+    const legacy = legacyStatePath(filePath);
+    if (legacy && fs.existsSync(legacy)) {
+      return readJson(legacy, emptyState());
+    }
+  }
+  return readJson(filePath, emptyState());
 }
 
 function saveState(filePath, state) {

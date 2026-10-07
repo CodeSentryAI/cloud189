@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 
-const { execFileSync, execSync } = require('child_process');
+const { execFile } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { promisify } = require('util');
+
+const execFileAsync = promisify(execFile);
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const z = require('zod');
@@ -11,11 +16,21 @@ const PERSONAL_ROOT_FOLDER_ID = '-11';
 
 // Windows compatibility patch: resolve the cloud189 CLI as a JS entry executed by
 // the current Node binary, because spawn('cloud189') cannot resolve the .cmd shim.
-const CLOUD189_CLI_JS = path.join(
-  path.dirname(require.resolve('@codesentryai/cloud189/package.json')),
-  'bin',
-  'cloud189.js'
-);
+function resolveCliEntry() {
+  try {
+    return path.join(
+      path.dirname(require.resolve('@codesentryai/cloud189/package.json')),
+      'bin',
+      'cloud189.js'
+    );
+  } catch (error) {
+    throw new Error(
+      'Cannot locate the @codesentryai/cloud189 CLI. Install it with: npm install -g @codesentryai/cloud189'
+    );
+  }
+}
+
+const CLOUD189_CLI_JS = resolveCliEntry();
 
 // --- helpers ----------------------------------------------------------------
 
@@ -25,26 +40,41 @@ const CLOUD189_CLI_JS = path.join(
 // Force IPv4-first explicitly for every CLI child process (not reliant on env).
 const DNS_ARGS = ['--dns-result-order=ipv4first'];
 
-function runCloud189(args, opts = {}) {
+// Quick commands get a bounded timeout so a hung API call cannot wedge the
+// server; transfers may legitimately run much longer and get their own budget.
+// Both are overridable via env for unusual networks.
+function envTimeout(name, fallback) {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw >= 0 ? raw : fallback;
+}
+
+const DEFAULT_TIMEOUT_MS = envTimeout('CLOUD189_MCP_TIMEOUT_MS', 30 * 60 * 1000);
+const TRANSFER_TIMEOUT_MS = envTimeout('CLOUD189_MCP_TRANSFER_TIMEOUT_MS', 12 * 60 * 60 * 1000);
+
+async function runCloud189(args, opts = {}) {
   try {
-    const result = execFileSync(process.execPath, [...DNS_ARGS, CLOUD189_CLI_JS, ...args, '--json'], {
-      timeout: 30000,
-      ...opts
-    });
-    return JSON.parse(result.toString());
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [...DNS_ARGS, CLOUD189_CLI_JS, ...args, '--json', '--guard-mode', 'mcp'],
+      {
+        timeout: DEFAULT_TIMEOUT_MS,
+        maxBuffer: 16 * 1024 * 1024,
+        ...opts
+      }
+    );
+    return JSON.parse(stdout.toString());
   } catch (error) {
     if (error.stdout) {
       try { return JSON.parse(error.stdout.toString()); } catch {}
     }
-    const message = error.stderr ? error.stderr.toString().trim() : error.message;
+    let message = error.stderr ? error.stderr.toString().trim() : error.message;
+    if (error.killed && !message) {
+      message = `cloud189 CLI timed out after ${opts.timeout || DEFAULT_TIMEOUT_MS}ms`;
+    }
     const err = new Error(message);
     err.code = 'CLOUD189_ERROR';
     throw err;
   }
-}
-
-function okResult(summary, data) {
-  return { ok: true, summary, data };
 }
 
 function errorResult(error) {
@@ -93,10 +123,59 @@ function runTool(fn) {
 // --- schemas ----------------------------------------------------------------
 
 const remoteIdSchema = z.string().regex(/^-?\d+$/, 'remote IDs must be numeric strings');
+
+// Uploads only read local files, so the coarse system-path guard is enough.
 const localPathSchema = z.string().min(1).refine((value) => {
   const resolved = path.resolve(value);
   return resolved !== '/' && resolved !== '/etc' && !resolved.startsWith('/etc/');
 }, 'localPath is outside the allowed workspace');
+
+// Downloads write local files, so they are restricted to an explicit workspace
+// (default: the OS temp dir and ~/cloud189; override with CLOUD189_MCP_WORKSPACE).
+function realpathIfExists(target) {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return target;
+  }
+}
+
+function mcpWorkspaceRoots() {
+  const configured = process.env.CLOUD189_MCP_WORKSPACE;
+  if (configured) {
+    return configured
+      .split(path.delimiter)
+      .filter(Boolean)
+      .map((entry) => resolveDestination(path.resolve(entry)));
+  }
+  const roots = [path.resolve(os.tmpdir()), path.resolve(os.homedir(), 'cloud189')];
+  if (fs.existsSync('/tmp')) roots.push('/tmp');
+  return roots.map(resolveDestination);
+}
+
+// Resolve a not-yet-existing destination through its nearest existing ancestor
+// so symlinks inside the workspace cannot redirect writes outside it.
+function resolveDestination(value) {
+  let current = path.resolve(value);
+  const missing = [];
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) return current;
+    missing.unshift(path.basename(current));
+    current = parent;
+  }
+  return path.join(realpathIfExists(current), ...missing);
+}
+
+function isInsideWorkspace(value) {
+  const resolved = resolveDestination(value);
+  return mcpWorkspaceRoots().some((root) => resolved === root || resolved.startsWith(root + path.sep));
+}
+
+const downloadPathSchema = z.string().min(1).refine(
+  isInsideWorkspace,
+  'localPath must be inside the MCP download workspace. Set CLOUD189_MCP_WORKSPACE to add allowed roots (default: OS temp dir and ~/cloud189).'
+);
 
 // --- tools ------------------------------------------------------------------
 
@@ -167,16 +246,16 @@ server.tool(
 
 server.tool(
   'cloud189_download',
-  'Download a remote file or folder to a local path.',
+  'Download a remote file or folder to a local path inside the MCP workspace.',
   {
     remoteId: remoteIdSchema.describe('Remote file or folder ID'),
-    localPath: localPathSchema.describe('Local destination path'),
+    localPath: downloadPathSchema.describe('Local destination path (inside the MCP workspace)'),
     dir: z.boolean().optional().describe('Set to true if downloading a folder')
   },
   (args) => {
     const cmdArgs = ['download', args.remoteId, args.localPath];
     if (args.dir) cmdArgs.push('--dir');
-    return runTool(() => runCloud189(cmdArgs));
+    return runTool(() => runCloud189(cmdArgs, { timeout: TRANSFER_TIMEOUT_MS }));
   }
 );
 
@@ -187,7 +266,7 @@ server.tool(
     localPath: localPathSchema.describe('Existing local file or directory path'),
     remoteFolderId: remoteIdSchema.describe('Destination remote folder ID. Must equal the configured write root ID.')
   },
-  (args) => runTool(() => runCloud189(['upload-safe', args.localPath, args.remoteFolderId]))
+  (args) => runTool(() => runCloud189(['upload-safe', args.localPath, args.remoteFolderId], { timeout: TRANSFER_TIMEOUT_MS }))
 );
 
 server.tool(
@@ -207,14 +286,14 @@ server.tool(
     localDir: localPathSchema.describe('Existing local directory to sync'),
     remoteFolderId: remoteIdSchema.describe('Destination remote folder ID. Must equal the configured write root ID.')
   },
-  (args) => runTool(() => runCloud189(['sync-upload-safe', args.localDir, args.remoteFolderId, '--once']))
+  (args) => runTool(() => runCloud189(['sync-upload-safe', args.localDir, args.remoteFolderId, '--once'], { timeout: TRANSFER_TIMEOUT_MS }))
 );
 
 server.tool(
   'cloud189_plan',
   'Create a dry-run plan for a dangerous operation. The plan is informational and does not execute.',
   {
-    command: z.enum(['rm', 'mv', 'rename-folder', 'upload', 'sync-upload']),
+    command: z.enum(['rm', 'mv', 'rename-folder', 'rename-file', 'upload', 'sync-upload']),
     args: z.array(z.string()).describe('Arguments for the planned command')
   },
   (args) => runTool(() => runCloud189(['plan', args.command, ...args.args]))
@@ -315,7 +394,11 @@ async function main() {
   process.stdin.on('end', () => clearInterval(keepAlive));
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { server };

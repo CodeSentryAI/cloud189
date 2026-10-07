@@ -3,7 +3,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createRemoteFolder, deleteRemoteFiles, listAll } = require('./remote');
-const { relativeKey, walkFiles } = require('./fs-utils');
+const { relativeKey, safeRemoteName, walkFiles } = require('./fs-utils');
+const { downloadUrlToFile, fetchDownloadUrl } = require('./http-utils');
 const {
   DEFAULT_TMP_RESERVE_BYTES,
   hashFile,
@@ -135,37 +136,8 @@ function indexFilesByName(files) {
 }
 
 async function downloadRemoteFileToPath(client, remoteFileId, localPath) {
-  const http = require('http');
-  const https = require('https');
-  const response = await client.getFileDownloadUrl({ fileId: remoteFileId }).json();
-  const url = response.fileDownloadUrl;
-  if (!url) throw new Error(`No download URL returned for ${remoteFileId}`);
-  fs.mkdirSync(path.dirname(path.resolve(localPath)), { recursive: true });
-
-  async function download(urlToFetch, redirectsLeft = 5) {
-    await new Promise((resolve, reject) => {
-      const transport = urlToFetch.startsWith('https:') ? https : http;
-      transport.get(urlToFetch, (res) => {
-        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
-          res.resume();
-          resolve(download(new URL(res.headers.location, urlToFetch).toString(), redirectsLeft - 1));
-          return;
-        }
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          res.resume();
-          reject(new Error(`Download failed with HTTP ${res.statusCode}`));
-          return;
-        }
-        const out = fs.createWriteStream(localPath);
-        res.pipe(out);
-        res.on('error', reject);
-        out.on('error', reject);
-        out.on('finish', resolve);
-      }).on('error', reject);
-    });
-  }
-
-  await download(url);
+  const url = await fetchDownloadUrl(client, remoteFileId);
+  await downloadUrlToFile(url, localPath);
 }
 
 async function remoteBundleReusable(client, remoteFile, expected, tmpDir, verify) {
@@ -303,17 +275,21 @@ async function downloadDirectoryBundle(client, remoteFolderId, localDir, remoteN
   if (!bundlesFolder) throw new Error('Directory bundle is missing bundles/ folder');
   const bundlesListing = await listAll(client, bundlesFolder.id);
   const remoteByName = new Map(bundlesListing.fileListAO.fileList.map((file) => [file.name, file]));
-  const outputRoot = path.join(localDir, manifest.rootName || originalNameFromDirBundle(remoteName));
+  const outputRoot = path.join(
+    localDir,
+    safeRemoteName(manifest.rootName || originalNameFromDirBundle(remoteName), 'directory bundle name')
+  );
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-dir-restore-'));
   try {
     for (const bundle of manifest.bundles) {
-      const remote = remoteByName.get(bundle.name);
-      if (!remote) throw new Error(`Missing directory bundle: ${bundle.name}`);
-      const tarPath = path.join(tmpDir, bundle.name);
+      const bundleName = safeRemoteName(bundle.name, 'directory bundle file name');
+      const remote = remoteByName.get(bundleName);
+      if (!remote) throw new Error(`Missing directory bundle: ${bundleName}`);
+      const tarPath = path.join(tmpDir, bundleName);
       await downloadFileToPath(remote.id, tarPath);
       if (bundle.sha256) {
         const actual = await hashFile(tarPath);
-        if (actual !== bundle.sha256) throw new Error(`Checksum mismatch for directory bundle: ${bundle.name}`);
+        if (actual !== bundle.sha256) throw new Error(`Checksum mismatch for directory bundle: ${bundleName}`);
       }
       tarExtract(tarPath, outputRoot);
       fs.rmSync(tarPath, { force: true });
