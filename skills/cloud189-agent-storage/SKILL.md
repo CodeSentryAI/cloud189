@@ -79,7 +79,9 @@ cloud189 transfer-status <containerId> [--json]
 
 Binary: `cloud189-mcp`
 
-MCP tools are safe-only: `cloud189_status`, `cloud189_roots`, `cloud189_list`, `cloud189_tree`, `cloud189_search`, `cloud189_quota`, `cloud189_download`, `cloud189_upload_safe`, `cloud189_mkdir_safe`, `cloud189_sync_upload_safe`, and `cloud189_plan`.
+MCP tools: `cloud189_status`, `cloud189_roots`, `cloud189_list`, `cloud189_tree`, `cloud189_search`, `cloud189_quota`, `cloud189_download`, `cloud189_upload_safe`, `cloud189_mkdir_safe`, `cloud189_sync_upload_safe`, and `cloud189_plan`. Destructive tools (`cloud189_rm`, `cloud189_mv`, `cloud189_rename_folder`, `cloud189_rename_file`) require `confirm: true` after a `cloud189_plan` preview.
+
+MCP downloads are restricted to the MCP workspace (default: OS temp dir and `~/cloud189`; override with `CLOUD189_MCP_WORKSPACE`).
 
 MCP intentionally does not expose raw large-object commands (`upload-large-*`, `sync-large-*`, legacy `sync-upload`). Use CLI `transfer-status` for resumable container status until MCP job/status support exists.
 

@@ -1,10 +1,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const http = require('http');
-const https = require('https');
 const crypto = require('crypto');
 const { createRemoteFolder, deleteRemoteFiles, listAll } = require('./remote');
+const { downloadUrlToFile, fetchDownloadUrl } = require('./http-utils');
 
 const SPLIT_FOLDER_SUFFIX = '.cloud189-split';
 const MANIFEST_NAME = '.cloud189-split-manifest.json';
@@ -58,6 +57,10 @@ function safeChunkSizeForDirectory(tmpDir, requestedChunkSize, options = {}) {
   return Math.min(requestedChunkSize, usable);
 }
 
+function assertTmpSpace(tmpDir, requestedChunkSize, options = {}) {
+  safeChunkSizeForDirectory(tmpDir, requestedChunkSize, options);
+}
+
 function isSplitFolderName(name) {
   return String(name || '').endsWith(SPLIT_FOLDER_SUFFIX);
 }
@@ -76,39 +79,9 @@ function chunkNameFor(index, sha256) {
   return `part-${String(index).padStart(6, '0')}-${sha256.slice(0, 16)}`;
 }
 
-function requestStream(url, redirects = 3) {
-  return new Promise((resolve, reject) => {
-    const transport = url.startsWith('https:') ? https : http;
-    const request = transport.get(url, (response) => {
-      if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location && redirects > 0) {
-        response.resume();
-        resolve(requestStream(new URL(response.headers.location, url).toString(), redirects - 1));
-        return;
-      }
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        response.resume();
-        reject(new Error(`Download failed with HTTP ${response.statusCode}`));
-        return;
-      }
-      resolve(response);
-    });
-    request.on('error', reject);
-  });
-}
-
 async function downloadRemoteFileToPath(client, remoteFileId, localPath) {
-  const response = await client.getFileDownloadUrl({ fileId: remoteFileId }).json();
-  const url = response.fileDownloadUrl;
-  if (!url) throw new Error(`No download URL returned for ${remoteFileId}`);
-  fs.mkdirSync(path.dirname(path.resolve(localPath)), { recursive: true });
-  const input = await requestStream(url);
-  const output = fs.createWriteStream(localPath);
-  await new Promise((resolve, reject) => {
-    input.pipe(output);
-    input.on('error', reject);
-    output.on('error', reject);
-    output.on('finish', resolve);
-  });
+  const url = await fetchDownloadUrl(client, remoteFileId);
+  await downloadUrlToFile(url, localPath);
 }
 
 function shouldVerifyRemoteChunks(options = {}) {
@@ -317,6 +290,7 @@ module.exports = {
   PROGRESS_NAME,
   MIN_CHUNK_SIZE,
   SPLIT_FOLDER_SUFFIX,
+  assertTmpSpace,
   diskAvailableBytes,
   chunkNameFor,
   hashFile,

@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
-const { encrypt, decrypt, generateKey } = require('./crypto');
-const { getConfigDir, ensureDir, getSessionPath, getDevicePath } = require('./paths');
+const { decrypt } = require('./crypto');
+const { getConfigDir, getSessionPath, getDevicePath } = require('./paths');
 const { redactObject, maskAccount } = require('./redact');
 
 // -- Types --
@@ -15,17 +15,6 @@ const KEYCHAIN_ACCOUNT = 'default';
 const MAX_FILE_BYTES = 64 * 1024; // refuse to encrypt/deserialize huge files
 
 // -- Helpers --
-
-function atomicWrite(filePath, data) {
-  const tmp = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmp, data, 'utf8');
-  fs.chmodSync(tmp, 0o600);
-  fs.renameSync(tmp, filePath);
-}
-
-function secureFilePermissions(filePath) {
-  try { fs.chmodSync(filePath, 0o600); } catch {}
-}
 
 function readSessionFile(sessionPath) {
   if (!fs.existsSync(sessionPath)) return null;
@@ -81,37 +70,7 @@ function getOrCreatePassphrase(sessionPath) {
   return null;
 }
 
-function createMachineKey() {
-  const key = generateKey();
-  const devicePath = getDevicePath();
-  ensureDir(path.dirname(devicePath));
-  atomicWrite(devicePath, JSON.stringify({ machineKey: key, createdAt: new Date().toISOString() }));
-  secureFilePermissions(devicePath);
-  return key;
-}
-
 // -- Main API --
-
-async function saveSession(session, options = {}) {
-  const configDir = options.configDir || getConfigDir();
-  ensureDir(configDir);
-  const sessionPath = options.sessionPath || getSessionPath(configDir);
-
-  // v0.1: always use encrypted-file with machine key (no keychain yet)
-  let passphrase = options.passphrase;
-  if (!passphrase) {
-    passphrase = getOrCreatePassphrase(sessionPath);
-  }
-  if (!passphrase) {
-    // First time: create a machine-derived key (no user interaction needed)
-    passphrase = createMachineKey();
-  }
-
-  const wrapped = encrypt(JSON.stringify(session), passphrase);
-  atomicWrite(sessionPath, JSON.stringify(wrapped, null, 2) + '\n');
-  secureFilePermissions(sessionPath);
-  return { sessionPath, storage: 'encrypted-file' };
-}
 
 async function loadSession(options = {}) {
   const configDir = options.configDir || getConfigDir();
@@ -173,9 +132,10 @@ async function sessionStatus(options = {}) {
     session = await loadSession(options);
   } catch {}
 
-  const devicePath = getDevicePath(configDir);
-  const hasMachineKey = fs.existsSync(devicePath);
-  const storage = hasMachineKey ? 'encrypted-file' : (exists ? 'encrypted-file' : 'none');
+  const storage = exists ? 'encrypted-file' : 'none';
+  const expiresAt = typeof session?.expiresIn === 'number' && session.expiresIn > 1e12
+    ? new Date(session.expiresIn).toISOString()
+    : null;
 
   return {
     loggedIn: !!session,
@@ -183,8 +143,8 @@ async function sessionStatus(options = {}) {
     configDir,
     account: session?.account ? maskAccount(session.account) : null,
     sessionPath,
-    expiresAt: session?.expiresAt || null
+    expiresAt
   };
 }
 
-module.exports = { saveSession, loadSession, clearSession, sessionStatus };
+module.exports = { loadSession, clearSession, sessionStatus };

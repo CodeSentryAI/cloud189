@@ -99,7 +99,7 @@ Configure at `~/.config/cloud189/security/policy.json`:
 | Non-interactive (`--json`) | Deny |
 | MCP / Agent | Deny |
 
-Override with `--force-sensitive` (still logs warning).
+Interactive override: `--force-sensitive` prints the findings, logs an audit entry, and requires typing `I UNDERSTAND UPLOAD SECRET`. It has no effect in `--json`/MCP modes (those always deny).
 
 ### Audit Log
 

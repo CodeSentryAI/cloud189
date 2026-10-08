@@ -1,7 +1,7 @@
 {
   "name": "@codesentryai/cloud189-mcp",
   "version": "2.0.0",
-  "description": "Cloud189 Agent Storage MCP server — gives AI agents (Hermes, Claude Code, OpenClaw, Cursor) secure cloud storage tools powered by Tianyi Cloud 189 / 天翼云盘. 11 MCP tools: login, list, search, upload-safe, download, mkdir, sync, plan.",
+  "description": "Cloud189 Agent Storage MCP server — gives AI agents (Hermes, Claude Code, OpenClaw, Cursor) secure cloud storage tools powered by Tianyi Cloud 189 / 天翼云盘. 15 MCP tools: status, roots, quota, list, tree, search, download, upload-safe, mkdir-safe, sync-upload-safe, plan, rename-folder, rename-file, rm, mv.",
   "license": "MIT",
   "author": "CodeSentryAI",
   "repository": {
@@ -40,7 +40,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node -e \"require('./src/mcp-server.js'); console.log('mcp-load-ok')\""
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",

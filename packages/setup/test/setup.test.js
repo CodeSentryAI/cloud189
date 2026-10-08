@@ -23,3 +23,12 @@ test('setup script includes work-results folder and canonical policy path', () =
   assert.match(script, /policy\.json/);
   assert.match(script, /installPublishedPackage/);
 });
+
+test('setup script parses CLI list items and configures the agent write root', () => {
+  const scriptPath = path.join(__dirname, '..', 'bin', 'cloud189-setup.js');
+  const script = fs.readFileSync(scriptPath, 'utf8');
+
+  assert.match(script, /j\.items/);
+  assert.match(script, /writeRootId/);
+  assert.match(script, /\.cloud189-agent/);
+});

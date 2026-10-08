@@ -11,9 +11,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
 
-const PKG_NAME = '@codesentryai/cloud189';
 const PKG_DISPLAY = 'Cloud189 by CodeSentryAI';
 
 // --- helpers ----------------------------------------------------------------
@@ -30,23 +28,14 @@ function colors() {
 }
 
 const c = colors();
-function findMcpBinary() {
-  try {
-    const result = execSync('which cloud189-mcp 2>/dev/null || echo ""', { encoding: 'utf8' }).trim();
-    if (result) return result;
-  } catch {}
-  // Fallback: try common global bin locations
-  const candidates = [
-    path.join(path.dirname(process.execPath), 'cloud189-mcp'),
-    '/usr/local/bin/cloud189-mcp',
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return 'cloud189-mcp'; // trust PATH at runtime
-}
 
-const MCP_BIN = findMcpBinary();
+function writeSecureJson(filePath, value) {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(dir, 0o700); } catch {}
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  try { fs.chmodSync(filePath, 0o600); } catch {}
+}
 
 // --- agent config dirs -------------------------------------------------------
 
@@ -143,7 +132,7 @@ Command-based safe cloud storage for AI agents. Remote IDs only — no mount,
 no direct filesystem. Agents can search, download, upload, and sync but cannot
 delete, move, rename, or overwrite remote files.
 
-## MCP Tools (11)
+## MCP Tools
 
 | Tool | Purpose |
 |---|---|
@@ -153,11 +142,15 @@ delete, move, rename, or overwrite remote files.
 | cloud189_tree | Recursive listing |
 | cloud189_search | Keyword search |
 | cloud189_quota | Storage usage |
-| cloud189_download | Download file/folder |
+| cloud189_download | Download file/folder (inside the MCP workspace) |
 | cloud189_upload_safe | Upload to write root, no overwrite |
 | cloud189_mkdir_safe | Idempotent mkdir in write root |
 | cloud189_sync_upload_safe | Deletion-free one-shot sync |
 | cloud189_plan | Dry-run plan for dangerous ops |
+| cloud189_rename_folder | Rename folder (requires confirm) |
+| cloud189_rename_file | Rename file (requires confirm) |
+| cloud189_rm | Delete remote item (requires confirm) |
+| cloud189_mv | Move remote item (requires confirm) |
 
 ## Agent-Safe Mode
 
@@ -190,8 +183,8 @@ Config stored in \`~/.cloud189-agent/config.json\`.
 
 1. \`cloud189_plan rm <remoteId>\` → get dry-run plan.
 2. Show plan.intent + plan.potentialImpact to user.
-3. Wait for explicit "approve".
-4. Switch to \`CLOUD189_MODE=user\` and run \`cloud189 rm <remoteId>\` yourself and report.
+3. Wait for explicit user approval.
+4. Ask the user to run the deletion themselves in their human CLI; do not bypass agent-safe mode.
 
 ## Common Pitfalls
 
@@ -222,12 +215,13 @@ function main() {
     const agentCfgDir = path.join(os.homedir(), '.cloud189-agent');
     const agentCfgFile = path.join(agentCfgDir, 'config.json');
     if (!fs.existsSync(agentCfgFile)) {
-      fs.mkdirSync(agentCfgDir, { recursive: true });
-      fs.writeFileSync(agentCfgFile, JSON.stringify({
+      writeSecureJson(agentCfgFile, {
         provider: 'cloud189', mode: 'agent-safe',
         agent: { name: 'hermes', writeRootId: '', writeRootName: 'hermes',
                   allowDelete: false, allowMove: false, allowRename: false, allowOverwrite: false },
-      }, null, 2) + '\n', 'utf8');
+      });
+    } else {
+      try { fs.chmodSync(agentCfgDir, 0o700); fs.chmodSync(agentCfgFile, 0o600); } catch {}
     }
     return;
   }
@@ -241,8 +235,7 @@ function main() {
   const agentCfgDir = path.join(os.homedir(), '.cloud189-agent');
   const agentCfgFile = path.join(agentCfgDir, 'config.json');
   if (!fs.existsSync(agentCfgFile)) {
-    fs.mkdirSync(agentCfgDir, { recursive: true });
-    fs.writeFileSync(agentCfgFile, JSON.stringify({
+    writeSecureJson(agentCfgFile, {
       provider: 'cloud189',
       mode: 'agent-safe',
       agent: {
@@ -254,9 +247,10 @@ function main() {
         allowRename: false,
         allowOverwrite: false,
       },
-    }, null, 2) + '\n', 'utf8');
+    });
     console.log(c.green('✓'), `Created ${c.dim(agentCfgFile)}`);
   } else {
+    try { fs.chmodSync(agentCfgDir, 0o700); fs.chmodSync(agentCfgFile, 0o600); } catch {}
     console.log(c.dim(' '), `Config already exists: ${c.dim(agentCfgFile)}`);
   }
 

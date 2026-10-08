@@ -31,16 +31,21 @@ async function runUploadPass(client, localDir, remoteFolderId, statePath = getSt
     const key = relativeKey(root, filePath);
     const signature = fileSignature(filePath);
     const remoteMatches = remoteByPath.get(key) || [];
+    const recorded = state.uploads[key];
+    const localChanged = hasChanged(recorded, signature);
     const sameSizeRemote = remoteMatches.find((file) => Number(file.size) === signature.size);
 
-    if (sameSizeRemote) {
+    // A same-size remote file is only trusted when we have no recorded state
+    // yet (seed it) or the local file is unchanged since the last sync.
+    // Otherwise a same-size content edit would be silently never uploaded.
+    if (sameSizeRemote && (!recorded || !localChanged)) {
       await deleteRemoteFiles(client, remoteMatches.filter((file) => file.id !== sameSizeRemote.id));
       state.uploads[key] = { ...signature, remoteFileId: sameSizeRemote.id };
       skipped.push(key);
       continue;
     }
 
-    if (!hasChanged(state.uploads[key], signature) && remoteMatches.length > 0) {
+    if (!localChanged && remoteMatches.length > 0) {
       continue;
     }
 

@@ -93,6 +93,17 @@ function scanDirectory(dirPath, policy, mode) {
   return results;
 }
 
+function buildRedactedMap(riskyResults, policy) {
+  const redactedMap = {};
+  for (const r of riskyResults) {
+    const redactedPath = createRedactedCopy(r.file, r.findings, policy.replace.replacement);
+    if (redactedPath !== r.file) {
+      redactedMap[r.file] = redactedPath;
+    }
+  }
+  return redactedMap;
+}
+
 async function guardBeforeUpload(localPath, options) {
   const {
     mode = 'non-interactive',
@@ -110,7 +121,8 @@ async function guardBeforeUpload(localPath, options) {
   }
 
   if (forceSensitive && mode === 'interactive') {
-    // Even with force, log a warning-level scan
+    // Force never silently bypasses the guard: show the findings and require
+    // the same typed confirmation as a critical override.
     const stat = fs.statSync(localPath);
     let findings = [];
     if (stat.isFile()) {
@@ -119,7 +131,39 @@ async function guardBeforeUpload(localPath, options) {
       const dirResults = scanDirectory(localPath, policy, mode);
       for (const r of dirResults) findings = findings.concat(r.findings);
     }
-    return { decision: 'approve', findings: sanitizeFindings(findings), safe: false, forced: true };
+    const sanitizedFindings = sanitizeFindings(findings);
+
+    console.log('');
+    console.log('\x1b[31mData Leak Guard: --force-sensitive is overriding the guard.\x1b[0m');
+    for (const f of sanitizedFindings.slice(0, 20)) {
+      const loc = f.line ? `:${f.line}` : '';
+      console.log(`  [${f.severity}] ${path.basename(f.file)}${loc} — ${f.type}${f.name ? ' (' + f.name + ')' : ''}`);
+    }
+    if (sanitizedFindings.length > 20) {
+      console.log(`  ... and ${sanitizedFindings.length - 20} more findings`);
+    }
+    console.log('Type "I UNDERSTAND UPLOAD SECRET" to confirm the override:');
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise(resolve => {
+      rl.once('line', line => { rl.close(); resolve(line.trim()); });
+    });
+    const confirmed = answer === 'I UNDERSTAND UPLOAD SECRET';
+
+    logEvent({
+      event: 'upload_decision',
+      file: localPath,
+      reason: sanitizedFindings.map(f => f.type + (f.name ? ':' + f.name : '')),
+      actor,
+      decision: confirmed ? 'approve' : 'deny',
+      mode,
+      forced: true
+    });
+
+    if (!confirmed) {
+      return { decision: 'deny', findings: sanitizedFindings, safe: false, forced: true };
+    }
+    return { decision: 'approve', findings: sanitizedFindings, safe: false, forced: true };
   }
 
   if (forceSensitive && mode !== 'interactive') {
@@ -163,7 +207,27 @@ async function guardBeforeUpload(localPath, options) {
 
   // --- MCP / non-interactive: deny by default ---
   if (mode === 'mcp' || mode === 'non-interactive') {
-    const decision = (recommendedAction === 'replace' && policy.replace.enabled) ? 'replace' : 'deny';
+    let decision = 'deny';
+    let redactedMap;
+    let nothingRedactable = false;
+
+    if (recommendedAction === 'replace' && policy.replace.enabled) {
+      redactedMap = buildRedactedMap(riskyResults, policy);
+      if (Object.keys(redactedMap).length > 0) {
+        decision = 'replace';
+      } else {
+        // Nothing could actually be redacted (path-only findings, unreadable or
+        // unparseable files). Never silently upload the original.
+        nothingRedactable = true;
+      }
+    } else if (
+      mode === 'mcp' &&
+      recommendedAction === 'approve' &&
+      policy.allowMcpOriginalSensitiveUpload
+    ) {
+      decision = 'approve';
+    }
+
     logEvent({
       event: 'upload_blocked',
       file: localPath,
@@ -173,7 +237,8 @@ async function guardBeforeUpload(localPath, options) {
       }),
       actor,
       decision,
-      mode
+      mode,
+      ...(nothingRedactable ? { note: 'nothing_redactable' } : {})
     });
     return {
       decision,
@@ -181,7 +246,9 @@ async function guardBeforeUpload(localPath, options) {
       safe: false,
       blockedFiles,
       allowedActions,
-      recommendedAction
+      recommendedAction: nothingRedactable ? 'deny' : recommendedAction,
+      ...(redactedMap && Object.keys(redactedMap).length > 0 ? { redactedMap } : {}),
+      ...(nothingRedactable ? { reason: 'nothing_redactable' } : {})
     };
   }
 
@@ -266,12 +333,28 @@ async function guardBeforeUpload(localPath, options) {
 
   if (decision === 'replace') {
     // Build a map of redacted paths
-    const redactedMap = {};
-    for (const r of riskyResults) {
-      const redactedPath = createRedactedCopy(r.file, r.findings, policy.replace.replacement);
-      if (redactedPath !== r.file) {
-        redactedMap[r.file] = redactedPath;
-      }
+    const redactedMap = buildRedactedMap(riskyResults, policy);
+    if (Object.keys(redactedMap).length === 0) {
+      // Nothing could actually be redacted (path-only findings, unreadable or
+      // unparseable files). Never silently upload the original.
+      logEvent({
+        event: 'upload_decision',
+        file: localPath,
+        reason: blockedFiles,
+        actor,
+        decision: 'deny',
+        mode,
+        note: 'nothing_redactable'
+      });
+      return {
+        decision: 'deny',
+        findings: sanitizedFindings,
+        safe: false,
+        blockedFiles,
+        allowedActions,
+        recommendedAction: 'deny',
+        reason: 'nothing_redactable'
+      };
     }
     return { decision: 'replace', findings: sanitizedFindings, safe: false, redactedMap, blockedFiles, allowedActions };
   }

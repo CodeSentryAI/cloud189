@@ -97,6 +97,72 @@ test('sync-upload removes duplicate remote files while keeping one same-size mat
   assert.equal(state.uploads['duplicate.txt'].remoteFileId, 'keep-1');
 });
 
+test('sync-upload re-uploads when local content changed but size stayed the same', async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-sync-'));
+  const dir = path.join(base, 'data');
+  fs.mkdirSync(dir);
+  const statePath = path.join(base, 'state.json');
+  const localFile = path.join(dir, 'same-size.txt');
+  fs.writeFileSync(localFile, 'hello', 'utf8');
+
+  const deleted = [];
+  const uploaded = [];
+  const client = {
+    async getListFiles() {
+      return listing([
+        {
+          id: 'remote-1',
+          name: 'same-size.txt',
+          parentId: 'root',
+          size: 5,
+          rev: '1'
+        }
+      ]);
+    },
+    async createBatchTask(request) {
+      deleted.push(...request.taskInfos.map((item) => item.fileId));
+      return { taskId: 'task-1', taskStatus: 1 };
+    },
+    async checkTaskStatus() {
+      return { taskId: 'task-1', taskStatus: 1 };
+    },
+    async upload({ filePath }) {
+      uploaded.push(path.basename(filePath));
+      return { file: { userFileId: 'new-1' } };
+    }
+  };
+
+  await runUploadPass(client, dir, 'root', statePath);
+
+  // Same byte count, different content, newer mtime.
+  fs.writeFileSync(localFile, 'world', 'utf8');
+  const future = new Date(Date.now() + 5000);
+  fs.utimesSync(localFile, future, future);
+
+  const result = await runUploadPass(client, dir, 'root', statePath);
+
+  assert.deepEqual(deleted, ['remote-1']);
+  assert.deepEqual(uploaded, ['same-size.txt']);
+  assert.deepEqual(result, ['same-size.txt']);
+});
+
+test('loadState falls back to the legacy cloud189-cli state file', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-legacy-'));
+  const configDir = path.join(base, 'cloud189');
+  const legacyDir = path.join(base, 'cloud189-cli');
+  fs.mkdirSync(configDir);
+  fs.mkdirSync(legacyDir);
+  fs.writeFileSync(path.join(legacyDir, 'state.json'), JSON.stringify({
+    uploads: { 'a.txt': { size: 1, mtimeMs: 1 } },
+    downloads: {},
+    operations: []
+  }));
+
+  const state = loadState(path.join(configDir, 'state.json'));
+
+  assert.equal(state.uploads['a.txt'].size, 1);
+});
+
 test('sync-upload deletes changed remote file before uploading replacement', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-sync-'));
   const statePath = path.join(dir, 'state.json');

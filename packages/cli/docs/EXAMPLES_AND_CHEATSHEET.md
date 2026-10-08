@@ -246,7 +246,7 @@ hermes mcp test cloud189
 
 ## 6. 安全提醒
 
-- 不要把 `~/.config/cloud189-cli/`、`~/.cloud189-agent/config.json`、token、cookie 提交到 git。
+- 不要把 `~/.config/cloud189/`、`~/.cloud189-agent/config.json`、token、cookie 提交到 git。
 - Agent 看到多个同名文件时不能猜，必须列候选。
 - `rm/mv/rename/upload/sync-upload` 这类危险操作必须 PLAN，不自动执行。
 - `sync-upload-safe` 不删除远程文件；遇到冲突会停止。

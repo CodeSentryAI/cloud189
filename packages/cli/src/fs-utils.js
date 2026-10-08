@@ -31,8 +31,27 @@ function relativeKey(root, filePath) {
   return path.relative(root, filePath).split(path.sep).join('/');
 }
 
+function safeRemoteName(name, label = 'remote name') {
+  const text = String(name ?? '');
+  if (
+    !text ||
+    text === '.' ||
+    text === '..' ||
+    text.includes('/') ||
+    text.includes('\\') ||
+    path.isAbsolute(text) ||
+    path.basename(text) !== text
+  ) {
+    const error = new Error(`Refusing unsafe ${label}: ${JSON.stringify(name)}`);
+    error.code = 'UNSAFE_REMOTE_NAME';
+    throw error;
+  }
+  return text;
+}
+
 module.exports = {
   fileSignature,
   relativeKey,
+  safeRemoteName,
   walkFiles
 };

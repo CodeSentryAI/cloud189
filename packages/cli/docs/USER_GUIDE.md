@@ -46,7 +46,7 @@ npm link
 Token 默认保存在：
 
 ```text
-~/.config/cloud189-cli/
+~/.config/cloud189/
 ```
 
 ## 3. 初始化 Agent 安全工作区

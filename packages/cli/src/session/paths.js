@@ -5,8 +5,9 @@ const path = require('path');
 const APP_DIR = 'cloud189';
 
 function getConfigDir(env = process.env) {
-  if (env.CLOUD189_HOME) {
-    return path.resolve(env.CLOUD189_HOME);
+  const override = env.CLOUD189_HOME || env.CLOUD189_CLI_HOME;
+  if (override) {
+    return path.resolve(override);
   }
   const base = env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
   return path.join(base, APP_DIR);

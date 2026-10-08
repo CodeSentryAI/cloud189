@@ -18,7 +18,7 @@
 
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -51,10 +51,51 @@ function runVisible(cmd, timeoutMs = 60000) {
   }
 }
 
-function runJson(cmd, timeoutMs = 30000) {
+// Resolve the globally installed CLI JS entry so we can exec it with an
+// argument array (no shell string interpolation, no Windows .cmd shim issues).
+let CLI_ENTRY;
+function cliEntry() {
+  if (CLI_ENTRY !== undefined) return CLI_ENTRY;
   try {
-    const out = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe','pipe','pipe'], timeout: timeoutMs });
-    return { ok: true, raw: out };
+    const root = execSync('npm root -g', { encoding: 'utf8' }).trim();
+    const entry = path.join(root, '@codesentryai', 'cloud189', 'bin', 'cloud189.js');
+    CLI_ENTRY = fs.existsSync(entry) ? entry : null;
+  } catch {
+    CLI_ENTRY = null;
+  }
+  return CLI_ENTRY;
+}
+
+function shellFallback(args) {
+  for (const arg of args) {
+    if (!/^[\w\-./:\\=]+$/.test(String(arg))) {
+      throw new Error(`Unsafe argument for shell fallback: ${JSON.stringify(arg)}`);
+    }
+  }
+  return ['cloud189', ...args].join(' ');
+}
+
+function runCli(args, { timeoutMs = 30000, visible = false } = {}) {
+  const stdio = visible ? 'inherit' : ['pipe', 'pipe', 'pipe'];
+  const entry = cliEntry();
+  if (entry) {
+    return execFileSync(process.execPath, [entry, ...args], { encoding: 'utf-8', stdio, timeout: timeoutMs });
+  }
+  return execSync(shellFallback(args), { encoding: 'utf-8', stdio, timeout: timeoutMs });
+}
+
+function runVisibleCli(args, timeoutMs = 60000) {
+  try {
+    runCli(args, { timeoutMs, visible: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runJson(args, timeoutMs = 30000) {
+  try {
+    return { ok: true, raw: runCli(args, { timeoutMs }) };
   } catch (e) {
     return { ok: false, raw: (e.stdout||'') + (e.stderr||'') };
   }
@@ -102,7 +143,7 @@ console.log(`\n${BOLD}${CYAN}
   // ── Step 3: Login ──────────────────────────────────────────────────
   step(3, 'Login to Tianyi Cloud 189');
 
-  const st = runJson('cloud189 status --json');
+  const st = runJson(['status', '--json']);
   let alreadyLoggedIn = false;
   try { alreadyLoggedIn = JSON.parse(st.raw||'{}').loggedIn; } catch {}
 
@@ -110,7 +151,7 @@ console.log(`\n${BOLD}${CYAN}
     ok('Already logged in');
   } else {
     console.log(`\n  ${YELLOW}Scan the QR code below with the 天翼云盘 app${RESET}\n`);
-    if (!runVisible('cloud189 login-qr', 180000)) {
+    if (!runVisibleCli(['login-qr'], 180000)) {
       fail('Login failed or timed out. Try: cloud189 login-qr');
       process.exit(1);
     }
@@ -120,7 +161,7 @@ console.log(`\n${BOLD}${CYAN}
   step(4, 'Create /AgentStorage folder structure');
 
   // Create /AgentStorage at personal root (-11)
-  const mkRoot = runJson('cloud189 mkdir -11 AgentStorage --json');
+  const mkRoot = runJson(['mkdir', '-11', 'AgentStorage', '--json']);
   if (!mkRoot.ok) {
     mkdirFallback('AgentStorage');
   }
@@ -128,11 +169,13 @@ console.log(`\n${BOLD}${CYAN}
 
   // Get its folder ID
   let agentStorageId = null;
-  const ls = runJson('cloud189 list -11 --json');
+  const ls = runJson(['list', '-11', '--json']);
   if (ls.ok) {
     try {
       const j = JSON.parse(ls.raw);
-      const entries = j.entries || j.files || j.list || j.data?.entries || [];
+      const entries = Array.isArray(j.items)
+        ? j.items
+        : (j.entries || j.files || j.list || j.data?.entries || []);
       const hit = entries.find(e => (e.name||e.fileName||'').replace(/\s/g,'').toLowerCase() === 'agentstorage');
       if (hit) agentStorageId = hit.id || hit.fileId || hit.folderId;
     } catch {}
@@ -141,8 +184,30 @@ console.log(`\n${BOLD}${CYAN}
   const subfolders = ['memory','work-results','reports','logs','backups'];
   if (agentStorageId) {
     for (const name of subfolders) {
-      const r = runJson(`cloud189 mkdir ${agentStorageId} ${name} --json`);
+      runJson(['mkdir', String(agentStorageId), String(name), '--json']);
       ok(`/${name} created`);
+    }
+
+    // Point the agent write root at /AgentStorage so upload-safe accepts it.
+    const agentCfgDir = path.join(os.homedir(), '.cloud189-agent');
+    const agentCfgFile = path.join(agentCfgDir, 'config.json');
+    let agentCfg = {};
+    try { agentCfg = JSON.parse(fs.readFileSync(agentCfgFile, 'utf8')); } catch {}
+    agentCfg.provider = agentCfg.provider || 'cloud189';
+    agentCfg.mode = agentCfg.mode || 'agent-safe';
+    agentCfg.agent = {
+      ...(agentCfg.agent || {}),
+      name: (agentCfg.agent && agentCfg.agent.name) || 'hermes',
+      writeRootId: String(agentStorageId),
+      writeRootName: 'AgentStorage'
+    };
+    try {
+      fs.mkdirSync(agentCfgDir, { recursive: true, mode: 0o700 });
+      fs.writeFileSync(agentCfgFile, JSON.stringify(agentCfg, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+      try { fs.chmodSync(agentCfgDir, 0o700); fs.chmodSync(agentCfgFile, 0o600); } catch {}
+      ok(`Agent write root configured (${agentStorageId})`);
+    } catch (e) {
+      warn(`Could not write agent config: ${e.message}`);
     }
   } else {
     warn('Could not detect /AgentStorage folder ID — create subfolders manually:');
@@ -209,9 +274,13 @@ console.log(`\n${BOLD}${CYAN}
 
   let testId = null;
   if (agentStorageId) {
-    const up = runJson(`cloud189 upload-safe ${testFile} ${agentStorageId} --json`);
+    const up = runJson(['upload-safe', testFile, String(agentStorageId), '--json']);
     if (up.ok) {
-      try { testId = JSON.parse(up.raw).id || JSON.parse(up.raw).fileId; } catch {}
+      try {
+        const payload = JSON.parse(up.raw);
+        const first = (payload.uploaded || [])[0] || {};
+        testId = first.remoteFileId || first.remoteFolderId || null;
+      } catch {}
       ok('Test upload succeeded');
     } else {
       warn('Test upload skipped (non-critical)');
@@ -222,7 +291,8 @@ console.log(`\n${BOLD}${CYAN}
 
   try { fs.unlinkSync(testFile); } catch {}
   if (testId) {
-    runJson(`cloud189 rm ${testId} --json`);
+    // Cleanup is an explicit admin action, so run it in user mode.
+    runJson(['rm', String(testId), '--mode', 'user', '--json']);
     info(`Cleaned up test file (id: ${testId})`);
   }
 
@@ -259,7 +329,7 @@ function mkdirFallback(name) {
   // Try up to 3 times with delay
   for (let i = 0; i < 3; i++) {
     try {
-      execSync(`cloud189 mkdir -11 ${name}`, { encoding: 'utf-8', stdio: ['pipe','pipe','pipe'], timeout: 15000 });
+      runCli(['mkdir', '-11', String(name)], { timeoutMs: 15000 });
       return;
     } catch {}
   }

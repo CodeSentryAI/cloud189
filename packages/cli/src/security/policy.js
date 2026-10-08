@@ -8,46 +8,45 @@ function resolvePattern(pattern) {
   return pattern;
 }
 
-function globMatch(filePath, pattern) {
-  const resolved = path.resolve(filePath);
-  const resolvedPattern = resolvePattern(pattern);
-
-  // Handle **/ prefix (match anywhere in path)
-  if (pattern.startsWith('**/')) {
-    const suffix = pattern.slice(3);
-    // Match end of path or as a segment
-    const rx = new RegExp(
-      '(?:^|/)' + escapeRegex(suffix).replace(/\\\*\*/g, '.*').replace(/\\\*/g, '[^/]*') + '$'
-    );
-    return rx.test(resolved);
-  }
-
-  // Handle ** in middle: e.g., ~/.ssh/**
-  if (pattern.includes('/**')) {
-    const prefix = resolvedPattern.replace('/**', '');
-    return resolved.startsWith(prefix + '/') || resolved === prefix;
-  }
-
-  // Handle *.ext patterns in current directory
-  if (pattern.startsWith('**/*.')) {
-    const ext = pattern.slice(5); // e.g., ".env" or ".pem"
-    return resolved.endsWith(ext);
-  }
-
-  // Plain equality or extension match
-  if (resolved === resolvedPattern) return true;
-
-  // .env, .env.*, etc.
-  if (pattern === '**/.env' || pattern === '**/.env.*') {
-    const base = path.basename(resolved);
-    return base === '.env' || base.startsWith('.env.');
-  }
-
-  return false;
+function normalizeForMatch(value) {
+  return String(value).replace(/\\/g, '/');
 }
 
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function globToRegExp(pattern) {
+  const patternText = normalizeForMatch(resolvePattern(pattern));
+  let source = '^';
+
+  for (let index = 0; index < patternText.length; index += 1) {
+    const char = patternText[index];
+    if (char === '*') {
+      if (patternText[index + 1] === '*') {
+        index += 1;
+        if (patternText[index + 1] === '/') {
+          index += 1;
+          source += '(?:.*/)?';
+        } else {
+          source += '.*';
+        }
+      } else {
+        source += '[^/]*';
+      }
+    } else if (char === '?') {
+      source += '[^/]';
+    } else if ('\\^$.|+()[]{}'.includes(char)) {
+      source += `\\${char}`;
+    } else {
+      source += char;
+    }
+  }
+
+  source += '$';
+  // Case-insensitive everywhere: secret-bearing names (MyToken.txt) must be
+  // caught consistently across platforms.
+  return new RegExp(source, 'i');
+}
+
+function globMatch(filePath, pattern) {
+  return globToRegExp(pattern).test(normalizeForMatch(path.resolve(filePath)));
 }
 
 function loadPolicy(userPolicyFile) {
@@ -123,7 +122,9 @@ function loadPolicy(userPolicyFile) {
   }
 
   // Check canonical default policy file
-  const configRoot = process.env.CLOUD189_CLI_HOME || path.join(os.homedir(), '.config', 'cloud189');
+  const configRoot = path.resolve(
+    process.env.CLOUD189_HOME || process.env.CLOUD189_CLI_HOME || path.join(os.homedir(), '.config', 'cloud189')
+  );
   const defaultPolicyPath = path.join(configRoot, 'security', 'policy.json');
   try {
     const user = JSON.parse(fs.readFileSync(defaultPolicyPath, 'utf8'));
@@ -160,6 +161,7 @@ function deepMerge(base, override) {
 }
 
 function classifyPath(filePath, policy) {
+  const fs = require('fs');
   const resolved = path.resolve(filePath);
 
   // Check allowlist first
@@ -167,26 +169,33 @@ function classifyPath(filePath, policy) {
     if (globMatch(resolved, p)) return null;
   }
 
-  for (const p of policy.forbiddenPaths) {
-    if (globMatch(resolved, p)) {
-      return { type: 'forbidden_path', severity: 'critical', pattern: p };
+  // Classify both the literal path and its realpath, so a symlink (or
+  // symlinked directory) cannot hide a forbidden target behind a safe name.
+  let real = resolved;
+  try { real = fs.realpathSync(resolved); } catch {}
+  const candidates = real === resolved ? [resolved] : [resolved, real];
+
+  for (const candidate of candidates) {
+    for (const p of policy.forbiddenPaths) {
+      if (globMatch(candidate, p)) {
+        return { type: 'forbidden_path', severity: 'critical', pattern: p };
+      }
     }
   }
 
-  for (const p of policy.suspiciousPaths) {
-    if (globMatch(resolved, p)) {
-      return { type: 'suspicious_path', severity: 'medium', pattern: p };
+  for (const candidate of candidates) {
+    for (const p of policy.suspiciousPaths) {
+      if (globMatch(candidate, p)) {
+        return { type: 'suspicious_path', severity: 'medium', pattern: p };
+      }
     }
   }
 
-  // Check unsafe symlinks
+  // Check unsafe symlinks that escape the home directory
   try {
-    const fs = require('fs');
     const lstat = fs.lstatSync(resolved);
     if (lstat.isSymbolicLink()) {
-      const real = fs.realpathSync(resolved);
-      const home = os.homedir();
-      if (!real.startsWith(home)) {
+      if (!real.startsWith(os.homedir())) {
         return { type: 'unsafe_symlink', severity: 'high', pattern: 'unsafe-symlink' };
       }
     }
