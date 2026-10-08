@@ -11,6 +11,9 @@ const PROGRESS_NAME = '.cloud189-split-progress.json';
 const DEFAULT_CHUNK_SIZE = 512 * 1024 * 1024;
 const DEFAULT_TMP_RESERVE_BYTES = 256 * 1024 * 1024;
 const MIN_CHUNK_SIZE = 8 * 1024 * 1024;
+const DEFAULT_CONCURRENT_CHUNKS = 3;
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const DEFAULT_RETRY_BASE_MS = 800;
 
 function parseBytes(value, fallback = DEFAULT_CHUNK_SIZE) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -34,7 +37,10 @@ function largeFileOptions(options = {}) {
   const chunkSize = parseBytes(options.chunkSize || process.env.CLOUD189_CHUNK_SIZE, DEFAULT_CHUNK_SIZE);
   const threshold = parseBytes(options.largeFileThreshold || process.env.CLOUD189_LARGE_FILE_THRESHOLD, 1024 * 1024 * 1024);
   const tmpReserveBytes = parseBytes(options.tmpReserveBytes || process.env.CLOUD189_TMP_RESERVE_BYTES, DEFAULT_TMP_RESERVE_BYTES);
-  return { chunkSize, threshold, tmpReserveBytes };
+  const concurrentChunks = Math.max(1, Number(options.concurrentChunks || options.concurrency || process.env.CLOUD189_CONCURRENT_CHUNKS || DEFAULT_CONCURRENT_CHUNKS) || DEFAULT_CONCURRENT_CHUNKS);
+  const retryAttempts = Math.max(1, Number(options.retryAttempts || process.env.CLOUD189_RETRY_ATTEMPTS || DEFAULT_RETRY_ATTEMPTS) || DEFAULT_RETRY_ATTEMPTS);
+  const retryBaseMs = Math.max(100, Number(options.retryBaseMs || process.env.CLOUD189_RETRY_BASE_MS || DEFAULT_RETRY_BASE_MS) || DEFAULT_RETRY_BASE_MS);
+  return { chunkSize, threshold, tmpReserveBytes, concurrentChunks, retryAttempts, retryBaseMs };
 }
 
 function diskAvailableBytes(targetPath) {
@@ -129,6 +135,26 @@ async function writeProgressManifest(client, splitFolderId, progress, existingPr
   return result;
 }
 
+function isRetryableUploadError(error) {
+  const message = String(error && error.message || error || '');
+  return /ETIMEDOUT|ECONNRESET|EAI_AGAIN|429|408|413|Download failed with HTTP 5|request failed|timeout/i.test(message);
+}
+
+async function retryWithBackoff(fn, attempts, baseMs) {
+  let lastError;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (i === attempts - 1 || !isRetryableUploadError(error)) throw error;
+      const delay = baseMs * (2 ** i) + Math.floor(Math.random() * 200);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 function hashFile(filePath, algorithm = 'sha256') {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash(algorithm);
@@ -150,6 +176,20 @@ async function writeChunkFromFd(fd, start, length, destination) {
   });
 }
 
+async function writeChunkFromFdWithHash(fd, start, length, destination) {
+  const hash = crypto.createHash('sha256');
+  await new Promise((resolve, reject) => {
+    const input = fs.createReadStream(null, { fd, start, end: start + length - 1, autoClose: false });
+    const output = fs.createWriteStream(destination);
+    input.on('data', (chunk) => hash.update(chunk));
+    input.on('error', reject);
+    output.on('error', reject);
+    output.on('finish', resolve);
+    input.pipe(output);
+  });
+  return hash.digest('hex');
+}
+
 async function uploadJsonAsFile(client, object, fileName, parentFolderId) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-manifest-'));
   const tmpPath = path.join(tmpDir, fileName);
@@ -166,73 +206,119 @@ async function uploadLargeFileAsSplit(client, filePath, remoteFolderId, options 
   const stat = fs.statSync(resolved);
   const configuredOptions = largeFileOptions(options);
   let { chunkSize } = configuredOptions;
+  const { concurrentChunks, retryAttempts, retryBaseMs } = configuredOptions;
   const fileName = path.basename(resolved);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud189-chunks-'));
   chunkSize = safeChunkSizeForDirectory(tmpDir, chunkSize, configuredOptions);
   const splitFolder = await ensureSplitFolder(client, remoteFolderId, fileName);
   const verifyRemote = shouldVerifyRemoteChunks(options);
-  const chunks = [];
+  const chunks = new Array(Math.ceil(stat.size / chunkSize));
+  const initialListing = await listAll(client, splitFolder.id);
+  const remoteByName = indexFilesByName(initialListing.fileListAO.fileList);
+  const manifestFiles = initialListing.fileListAO.fileList.filter((file) => file.name === MANIFEST_NAME);
+  const progressFiles = initialListing.fileListAO.fileList.filter((file) => file.name === PROGRESS_NAME);
+  const totalChunks = chunks.length;
   const fd = fs.openSync(resolved, 'r');
   let reused = 0;
   let uploadedCount = 0;
+  let activeUploads = 0;
+  let maxActiveUploads = 0;
+  const pendingProgress = { dirty: false };
+  let progressInFlight = null;
+
+  async function flushProgress() {
+    if (!pendingProgress.dirty || progressInFlight) return;
+    const snapshot = chunks.filter(Boolean);
+    pendingProgress.dirty = false;
+    progressInFlight = writeProgressManifest(client, splitFolder.id, {
+      version: 1,
+      type: 'cloud189-split-progress',
+      originalName: fileName,
+      size: stat.size,
+      chunkSize,
+      chunkCount: totalChunks,
+      completedChunks: snapshot.length,
+      chunks: snapshot
+    }, progressFiles).finally(() => {
+      progressInFlight = null;
+      if (pendingProgress.dirty) return flushProgress();
+      return null;
+    });
+    await progressInFlight;
+  }
+
+  async function processChunk(index) {
+    const start = index * chunkSize;
+    const size = Math.min(chunkSize, stat.size - start);
+    const scratchPath = path.join(tmpDir, `part-${String(index).padStart(6, '0')}.tmp`);
+    const sha256 = await writeChunkFromFdWithHash(fd, start, size, scratchPath);
+    const chunkName = chunkNameFor(index, sha256);
+    const finalChunkPath = path.join(tmpDir, chunkName);
+    try { fs.renameSync(scratchPath, finalChunkPath); } catch (_) {
+      fs.rmSync(scratchPath, { force: true });
+      throw _;
+    }
+    const expected = { index, name: chunkName, size, sha256 };
+    const remoteCandidates = remoteByName.get(chunkName) || [];
+    let reusable = null;
+    for (const remoteFile of remoteCandidates) {
+      if (await remoteChunkIsReusable(client, remoteFile, expected, tmpDir, verifyRemote)) {
+        reusable = remoteFile;
+        break;
+      }
+    }
+    let record;
+    if (reusable) {
+      record = { ...expected, remoteFileId: reusable.id, reused: true };
+      reused += 1;
+      fs.rmSync(finalChunkPath, { force: true });
+    } else {
+      const badCandidates = remoteCandidates.filter((file) => Number(file.size || 0) !== Number(size || 0));
+      if (verifyRemote && remoteCandidates.length) {
+        await deleteRemoteFiles(client, remoteCandidates);
+      } else if (badCandidates.length) {
+        await deleteRemoteFiles(client, badCandidates);
+      }
+      activeUploads += 1;
+      maxActiveUploads = Math.max(maxActiveUploads, activeUploads);
+      try {
+        const result = await retryWithBackoff(() => client.upload({ parentFolderId: splitFolder.id, filePath: finalChunkPath }, options.callbacks), retryAttempts, retryBaseMs);
+        record = { ...expected, remoteFileId: result.file.userFileId, reused: false };
+        uploadedCount += 1;
+      } finally {
+        activeUploads -= 1;
+        fs.rmSync(finalChunkPath, { force: true });
+      }
+    }
+    chunks[index] = record;
+    pendingProgress.dirty = true;
+    if (concurrentChunks === 1) {
+      await flushProgress();
+    } else if (chunks.filter(Boolean).length % Math.max(1, Math.ceil(concurrentChunks * 2)) === 0) {
+      await flushProgress();
+    }
+    return record;
+  }
 
   try {
-    const initialListing = await listAll(client, splitFolder.id);
-    const remoteByName = indexFilesByName(initialListing.fileListAO.fileList);
-    const manifestFiles = initialListing.fileListAO.fileList.filter((file) => file.name === MANIFEST_NAME);
-    const progressFiles = initialListing.fileListAO.fileList.filter((file) => file.name === PROGRESS_NAME);
-    const totalChunks = Math.ceil(stat.size / chunkSize);
-
-    for (let index = 0; index < totalChunks; index += 1) {
-      const start = index * chunkSize;
-      const size = Math.min(chunkSize, stat.size - start);
-      const scratchName = `part-${String(index).padStart(6, '0')}.tmp`;
-      const scratchPath = path.join(tmpDir, scratchName);
-      await writeChunkFromFd(fd, start, size, scratchPath);
-      const sha256 = await hashFile(scratchPath);
-      const chunkName = chunkNameFor(index, sha256);
-      const finalChunkPath = path.join(tmpDir, chunkName);
-      fs.renameSync(scratchPath, finalChunkPath);
-      const expected = { index, name: chunkName, size, sha256 };
-      const remoteCandidates = remoteByName.get(chunkName) || [];
-      let reusable = null;
-
-      for (const remoteFile of remoteCandidates) {
-        if (await remoteChunkIsReusable(client, remoteFile, expected, tmpDir, verifyRemote)) {
-          reusable = remoteFile;
-          break;
-        }
+    if (concurrentChunks <= 1 || totalChunks <= 1) {
+      for (let index = 0; index < totalChunks; index += 1) {
+        await processChunk(index);
       }
-
-      if (reusable) {
-        chunks.push({ ...expected, remoteFileId: reusable.id, reused: true });
-        reused += 1;
-        fs.rmSync(finalChunkPath, { force: true });
-      } else {
-        const badCandidates = remoteCandidates.filter((file) => Number(file.size || 0) !== Number(size || 0));
-        if (verifyRemote && remoteCandidates.length) {
-          await deleteRemoteFiles(client, remoteCandidates);
-        } else if (badCandidates.length) {
-          await deleteRemoteFiles(client, badCandidates);
+    } else {
+      const pool = Math.min(concurrentChunks, totalChunks);
+      let next = 0;
+      const workers = Array.from({ length: pool }, async () => {
+        while (true) {
+          const index = next++;
+          if (index >= totalChunks) break;
+          await processChunk(index);
         }
-        const result = await client.upload({ parentFolderId: splitFolder.id, filePath: finalChunkPath }, options.callbacks);
-        chunks.push({ ...expected, remoteFileId: result.file.userFileId, reused: false });
-        uploadedCount += 1;
-        fs.rmSync(finalChunkPath, { force: true });
-      }
-
-      await writeProgressManifest(client, splitFolder.id, {
-        version: 1,
-        type: 'cloud189-split-progress',
-        originalName: fileName,
-        size: stat.size,
-        chunkSize,
-        chunkCount: totalChunks,
-        completedChunks: chunks.length,
-        chunks
-      }, progressFiles);
+      });
+      await Promise.all(workers);
     }
-
+    if (pendingProgress.dirty) await flushProgress();
+    if (progressInFlight) await progressInFlight;
     if (manifestFiles.length) {
       await deleteRemoteFiles(client, manifestFiles);
     }
@@ -249,7 +335,7 @@ async function uploadLargeFileAsSplit(client, filePath, remoteFolderId, options 
     chunkSize,
     chunkCount: chunks.length,
     sha256: await hashFile(resolved),
-    chunks
+    chunks: chunks.filter(Boolean)
   };
   const manifestUpload = await uploadJsonAsFile(client, manifest, MANIFEST_NAME, splitFolder.id);
 
@@ -263,7 +349,9 @@ async function uploadLargeFileAsSplit(client, filePath, remoteFolderId, options 
     uploadedChunks: uploadedCount,
     manifestRemoteFileId: manifestUpload.file.userFileId,
     chunkCount: chunks.length,
-    size: stat.size
+    size: stat.size,
+    concurrentChunks,
+    maxActiveUploads
   };
 }
 
@@ -300,5 +388,7 @@ module.exports = {
   originalNameFromSplitFolder,
   safeChunkSizeForDirectory,
   splitFolderNameFor,
-  uploadLargeFileAsSplit
+  uploadLargeFileAsSplit,
+  writeChunkFromFd,
+  writeChunkFromFdWithHash
 };

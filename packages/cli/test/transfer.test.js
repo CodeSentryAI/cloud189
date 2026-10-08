@@ -69,7 +69,7 @@ test('uploadPath splits files above threshold and uploads manifest', async () =>
     }
   };
 
-  const result = await uploadPath(client, filePath, 'root', { largeFileThreshold: 4, chunkSize: 5 });
+  const result = await uploadPath(client, filePath, 'root', { largeFileThreshold: 4, chunkSize: 5, concurrentChunks: 1 });
   assert.equal(result.length, 1);
   assert.equal(result[0].split, true);
   assert.equal(result[0].chunkCount, 4);
@@ -87,6 +87,36 @@ test('uploadPath splits files above threshold and uploads manifest', async () =>
     chunkNames[3], PROGRESS_NAME,
     MANIFEST_NAME
   ]);
+  // concurrent batch mode should upload chunks in parallel and batch progress writes
+  uploaded.length = 0;
+  const concurrentClient = {
+    async getListFiles() {
+      return { fileListAO: { count: 0, folderList: [], fileList: [] }, lastRev: 1 };
+    },
+    async createFolder({ folderName }) {
+      return { id: `folder-${folderName}`, name: folderName };
+    },
+    async upload({ parentFolderId, filePath: uploadFilePath }) {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      uploaded.push({ parentFolderId, name: path.basename(uploadFilePath), content: fs.readFileSync(uploadFilePath) });
+      return { file: { userFileId: `id-${uploaded.length}`, fileName: path.basename(uploadFilePath), fileSize: fs.statSync(uploadFilePath).size } };
+    },
+    async createBatchTask() {
+      return { taskId: 'delete-task', taskStatus: 4 };
+    },
+    async checkTaskStatus() {
+      return { taskId: 'delete-task', taskStatus: 4 };
+    }
+  };
+  const concurrentResult = await uploadPath(concurrentClient, filePath, 'root', { largeFileThreshold: 4, chunkSize: 5, concurrentChunks: 3 });
+  assert.equal(concurrentResult[0].chunkCount, 4);
+  assert.equal(concurrentResult[0].concurrentChunks, 3);
+  assert.ok(concurrentResult[0].maxActiveUploads > 1, 'should have concurrent uploads');
+  const names = uploaded.map((item) => item.name);
+  for (const n of chunkNames) assert.ok(names.includes(n), `missing chunk ${n}`);
+  assert.ok(names.includes(MANIFEST_NAME));
+  assert.ok(names.filter((n) => n === PROGRESS_NAME).length >= 1);
+  assert.equal(names[names.length - 1], MANIFEST_NAME);
 });
 
 test('downloadFolder reassembles split upload folder into original file', async () => {
